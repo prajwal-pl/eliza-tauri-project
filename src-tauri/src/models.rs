@@ -72,6 +72,7 @@ pub struct RunSpec {
     pub args: Vec<String>,
     pub env: HashMap<String, String>,
     pub working_dir: Option<String>,
+    pub character_file: Option<String>,
 }
 
 impl RunSpec {
@@ -82,6 +83,7 @@ impl RunSpec {
             args,
             env: HashMap::new(),
             working_dir: None,
+            character_file: None,
         }
     }
 
@@ -438,6 +440,59 @@ impl AppError {
             AppError::Request(_) => "REQUEST_ERROR",
             AppError::Unknown(_) => "UNKNOWN_ERROR",
         }
+    }
+}
+
+// ============================================================================
+// Log Streaming Models
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEvent {
+    pub run_id: String,
+    pub message: String,
+    pub log_type: LogType,
+    pub timestamp: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogType {
+    Stdout,
+    Stderr,
+    Info,
+    Error,
+    System,
+}
+
+impl LogEvent {
+    pub fn new(run_id: String, message: String, log_type: LogType) -> Self {
+        Self {
+            run_id,
+            message,
+            log_type,
+            timestamp: chrono::Utc::now().timestamp(),
+        }
+    }
+
+    pub fn stdout(run_id: String, message: String) -> Self {
+        Self::new(run_id, message, LogType::Stdout)
+    }
+
+    pub fn stderr(run_id: String, message: String) -> Self {
+        Self::new(run_id, message, LogType::Stderr)
+    }
+
+    pub fn info(run_id: String, message: String) -> Self {
+        Self::new(run_id, message, LogType::Info)
+    }
+
+    pub fn error(run_id: String, message: String) -> Self {
+        Self::new(run_id, message, LogType::Error)
+    }
+
+    pub fn system(run_id: String, message: String) -> Self {
+        Self::new(run_id, message, LogType::System)
     }
 }
 

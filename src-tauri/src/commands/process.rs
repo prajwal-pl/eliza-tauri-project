@@ -1,17 +1,50 @@
 //! Process management for ElizaOS CLI execution
 //! Handles spawning, monitoring, and controlling ElizaOS CLI processes
 
-use crate::models::{ApiResponse, AppError, RunResult, RunSpec, RunStatus, RunMode, SandboxConfig};
+use crate::models::{ApiResponse, AppError, LogEvent, RunResult, RunSpec, RunStatus, RunMode, SandboxConfig};
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Emitter};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command as TokioCommand;
 use tokio::sync::{Mutex, RwLock};
 
 // Global process registry to track running processes
 type ProcessRegistry = Arc<RwLock<HashMap<String, Arc<Mutex<RunResult>>>>>;
 
-/// Start a new ElizaOS CLI run (simplified version for MVP)
+/// Start a new ElizaOS CLI run with live log streaming
+#[tauri::command]
+pub async fn start_eliza_run_streaming(
+    app: AppHandle,
+    spec: RunSpec,
+    config: SandboxConfig,
+) -> Result<ApiResponse<RunResult>, String> {
+    log::info!("Starting ElizaOS CLI run with live streaming: {} {:?}", spec.mode, spec.args);
+
+    if !config.is_valid() {
+        return Ok(ApiResponse::error(
+            "INVALID_CONFIG".to_string(),
+            "Invalid Sandbox configuration".to_string(),
+        ));
+    }
+
+    match execute_eliza_run_streaming(app, spec, config).await {
+        Ok(result) => {
+            log::info!("Started streaming ElizaOS CLI run: {}", result.id);
+            Ok(ApiResponse::success(result))
+        }
+        Err(e) => {
+            log::error!("Failed to start streaming ElizaOS CLI run: {}", e);
+            Ok(ApiResponse::error(
+                "START_ERROR".to_string(),
+                format!("Failed to start streaming run: {}", e),
+            ))
+        }
+    }
+}
+
+/// Start a new ElizaOS CLI run (simplified version for MVP - kept for compatibility)
 #[tauri::command]
 pub async fn start_eliza_run(
     app: AppHandle,
@@ -181,6 +214,188 @@ async fn execute_eliza_run_simple(
     Ok(run_result)
 }
 
+/// Execute ElizaOS CLI run with real-time log streaming
+async fn execute_eliza_run_streaming(
+    app: AppHandle,
+    spec: RunSpec,
+    config: SandboxConfig,
+) -> Result<RunResult, AppError> {
+    // Generate unique run ID
+    let run_id = format!("run_{}", crate::models::current_timestamp());
+
+    // Create initial run result
+    let mut run_result = RunResult::new(spec.clone(), run_id.clone());
+
+    // Emit system log about starting
+    let _ = app.emit(
+        "log-event",
+        LogEvent::system(run_id.clone(), "Starting ElizaOS CLI execution...".to_string())
+    );
+
+    // Determine ElizaOS CLI command
+    let (eliza_cmd, use_npx) = resolve_eliza_command().await?;
+
+    log::debug!("Using ElizaOS command: {} (npx: {})", eliza_cmd, use_npx);
+
+    // Build command arguments and environment
+    let args = build_eliza_args(&spec, &config, use_npx)?;
+    let env = build_eliza_env(&config);
+
+    // Sanitize arguments for logging
+    let safe_args: Vec<String> = args.iter()
+        .map(|arg| {
+            if arg.starts_with("eliza_") {
+                format!("{}***", &arg[..12])
+            } else {
+                arg.clone()
+            }
+        })
+        .collect();
+
+    log::info!(
+        "Executing with streaming: {} {} (working_dir: {:?})",
+        eliza_cmd,
+        safe_args.join(" "),
+        spec.working_dir
+    );
+
+    // Emit command info
+    let _ = app.emit(
+        "log-event",
+        LogEvent::info(run_id.clone(), format!("Command: {} {}", eliza_cmd, safe_args.join(" ")))
+    );
+
+    // Use tokio::process::Command for async execution
+    let mut command = TokioCommand::new(&eliza_cmd);
+    command.args(&args);
+    command.envs(&env);
+
+    if let Some(ref wd) = spec.working_dir {
+        command.current_dir(wd);
+    }
+
+    // Configure for stdout/stderr capture
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+
+    let start_time = std::time::Instant::now();
+    run_result.status = RunStatus::Running;
+
+    // Spawn the process
+    match command.spawn() {
+        Ok(mut child) => {
+            // Get stdout and stderr handles
+            let stdout = child.stdout.take().ok_or_else(|| {
+                AppError::Process("Failed to get stdout handle".to_string())
+            })?;
+
+            let stderr = child.stderr.take().ok_or_else(|| {
+                AppError::Process("Failed to get stderr handle".to_string())
+            })?;
+
+            // Spawn tasks for streaming logs
+            let app_stdout = app.clone();
+            let run_id_stdout = run_id.clone();
+            let stdout_task = tokio::spawn(async move {
+                let reader = BufReader::new(stdout);
+                let mut lines = reader.lines();
+                let mut stdout_lines = Vec::new();
+
+                while let Ok(Some(line)) = lines.next_line().await {
+                    stdout_lines.push(line.clone());
+                    let _ = app_stdout.emit(
+                        "log-event",
+                        LogEvent::stdout(run_id_stdout.clone(), line)
+                    );
+                }
+                stdout_lines
+            });
+
+            let app_stderr = app.clone();
+            let run_id_stderr = run_id.clone();
+            let stderr_task = tokio::spawn(async move {
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                let mut stderr_lines = Vec::new();
+
+                while let Ok(Some(line)) = lines.next_line().await {
+                    stderr_lines.push(line.clone());
+                    let _ = app_stderr.emit(
+                        "log-event",
+                        LogEvent::stderr(run_id_stderr.clone(), line)
+                    );
+                }
+                stderr_lines
+            });
+
+            // Wait for process completion
+            let status_result = child.wait().await;
+
+            // Wait for log streaming tasks to complete
+            let stdout_lines = stdout_task.await.unwrap_or_default();
+            let mut stderr_lines = stderr_task.await.unwrap_or_default();
+
+            // Update run result
+            match status_result {
+                Ok(status) => {
+                    run_result.status = if status.success() {
+                        RunStatus::Completed
+                    } else {
+                        RunStatus::Failed
+                    };
+                    run_result.exit_code = status.code();
+                }
+                Err(e) => {
+                    run_result.status = RunStatus::Failed;
+                    stderr_lines.push(format!("Process wait failed: {}", e));
+                    log::error!("Process wait failed: {}", e);
+                }
+            }
+
+            run_result.stdout = stdout_lines;
+            run_result.stderr = stderr_lines;
+            run_result.ended_at = Some(crate::models::current_timestamp());
+            run_result.duration_ms = Some(start_time.elapsed().as_millis() as u64);
+
+            // Emit completion event
+            let status_msg = match run_result.status {
+                RunStatus::Completed => format!("Process completed successfully (exit code: {:?})", run_result.exit_code),
+                RunStatus::Failed => format!("Process failed (exit code: {:?})", run_result.exit_code),
+                _ => "Process ended".to_string(),
+            };
+
+            let _ = app.emit(
+                "log-event",
+                LogEvent::system(run_id.clone(), status_msg)
+            );
+
+            log::info!(
+                "Streaming ElizaOS CLI process completed: exit_code={:?}, duration={}ms, stdout_lines={}, stderr_lines={}",
+                run_result.exit_code,
+                start_time.elapsed().as_millis(),
+                run_result.stdout.len(),
+                run_result.stderr.len()
+            );
+
+            Ok(run_result)
+        }
+        Err(e) => {
+            run_result.status = RunStatus::Failed;
+            run_result.stderr.push(format!("Failed to spawn process: {}", e));
+            run_result.ended_at = Some(crate::models::current_timestamp());
+            run_result.duration_ms = Some(start_time.elapsed().as_millis() as u64);
+
+            let _ = app.emit(
+                "log-event",
+                LogEvent::error(run_id.clone(), format!("Failed to spawn process: {}", e))
+            );
+
+            log::error!("Failed to spawn streaming ElizaOS CLI process: {}", e);
+            Err(AppError::Process(format!("Failed to spawn process: {}", e)))
+        }
+    }
+}
+
 /// Resolve the ElizaOS CLI command to use
 async fn resolve_eliza_command() -> Result<(String, bool), AppError> {
     // Try elizaos command (from @elizaos/cli package)
@@ -242,8 +457,11 @@ fn build_eliza_args(spec: &RunSpec, _config: &SandboxConfig, use_npx: bool) -> R
         }
     }
 
-    // Add character file if specified in the future
-    // This will be implemented in Step 4
+    // Add character file if specified
+    if let Some(ref character_file) = spec.character_file {
+        args.push("--character".to_string());
+        args.push(character_file.clone());
+    }
 
     // Add additional arguments (skip first for Custom mode since it's the command)
     let skip_count = if matches!(spec.mode, RunMode::Custom) && !spec.args.is_empty() { 1 } else { 0 };

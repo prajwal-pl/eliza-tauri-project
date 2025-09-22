@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useRunnerStore } from '../../stores/runnerStore';
 import { useConfigStore } from '../../stores/configStore';
 
@@ -9,12 +9,23 @@ const RunnerPage: React.FC = () => {
     logs,
     isLoading,
     error,
+    autoScroll,
     runDoctor,
     runPrompt,
-    clearLogs
+    clearLogs,
+    setAutoScroll
   } = useRunnerStore();
 
+  const logContainerRef = useRef<HTMLDivElement>(null);
+
   const { sandboxConfig, isConfigured } = useConfigStore();
+
+  // Auto-scroll to bottom when new logs arrive
+  useEffect(() => {
+    if (autoScroll && logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [logs, autoScroll]);
 
   const handleRunDoctor = async () => {
     if (!sandboxConfig) {
@@ -74,14 +85,6 @@ const RunnerPage: React.FC = () => {
           >
             {isRunning ? 'Running...' : 'Run Test Prompt'}
           </button>
-
-          <button
-            onClick={clearLogs}
-            disabled={logs.length === 0}
-            className="clear-logs-button"
-          >
-            Clear Logs
-          </button>
         </div>
 
         {currentRun && (
@@ -110,10 +113,27 @@ const RunnerPage: React.FC = () => {
       <div className="log-viewer">
         <div className="log-header">
           <h3>Logs</h3>
-          <span className="log-count">{logs.length} entries</span>
+          <div className="log-controls">
+            <span className="log-count">{logs.length} entries</span>
+            <label className="auto-scroll-toggle">
+              <input
+                type="checkbox"
+                checked={autoScroll}
+                onChange={(e) => setAutoScroll(e.target.checked)}
+              />
+              Auto-scroll
+            </label>
+            <button
+              onClick={clearLogs}
+              disabled={logs.length === 0}
+              className="clear-logs-button-small"
+            >
+              Clear
+            </button>
+          </div>
         </div>
 
-        <div className="log-content">
+        <div className="log-content" ref={logContainerRef}>
           {logs.length === 0 ? (
             <div className="no-logs">No logs available. Run a command to see output.</div>
           ) : (
@@ -125,6 +145,11 @@ const RunnerPage: React.FC = () => {
                   </span>
                   <span className="log-type">{log.type.toUpperCase()}</span>
                   <span className="log-content">{log.content}</span>
+                  {log.source && (
+                    <span className="log-source" title={`Run ID: ${log.source}`}>
+                      {log.source.slice(-8)}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

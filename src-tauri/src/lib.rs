@@ -52,6 +52,7 @@ pub fn run() {
 
             // Process management commands
             start_eliza_run,
+            start_eliza_run_streaming,
             stop_eliza_run,
             kill_eliza_run,
             get_run_result,

@@ -36,6 +36,7 @@ export interface RunSpec {
   args: string[];
   env: Record<string, string>;
   workingDir?: string;
+  characterFile?: string;
 }
 
 const RunSpecSchema = z.object({
@@ -44,6 +45,7 @@ const RunSpecSchema = z.object({
   args: z.array(z.string()),
   env: z.record(z.string()),
   workingDir: z.string().optional(),
+  characterFile: z.string().optional(),
 });
 
 export interface RunResult {
@@ -123,6 +125,13 @@ export interface LogEntry {
   type: 'stdout' | 'stderr' | 'system';
   content: string;
   source?: string;
+}
+
+export interface LogEvent {
+  runId: string;
+  message: string;
+  logType: 'stdout' | 'stderr' | 'info' | 'error' | 'system';
+  timestamp: number;
 }
 
 // ============================================================================

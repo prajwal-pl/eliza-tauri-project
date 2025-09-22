@@ -10,6 +10,7 @@ import type {
   RunSpec,
   RunResult,
   LogEntry,
+  LogEvent,
   ApiResponse,
   SandboxConfig,
 } from '../types';
@@ -34,6 +35,7 @@ interface RunnerState {
 
   // Actions
   startRun: (spec: Omit<RunSpec, 'id'>, config: SandboxConfig) => Promise<string>;
+  startStreamingRun: (spec: Omit<RunSpec, 'id'>, config: SandboxConfig) => Promise<string>;
   stopRun: () => Promise<void>;
   killRun: () => Promise<void>;
   clearLogs: () => void;
@@ -114,6 +116,62 @@ export const useRunnerStore = create<RunnerState>()(
         } catch (error) {
           console.error('Error starting run:', error);
           const errorMessage = error instanceof Error ? error.message : 'Failed to start run';
+          set({
+            isLoading: false,
+            error: errorMessage,
+          });
+          throw error;
+        }
+      },
+
+      // Start a new ElizaOS CLI run with live streaming
+      startStreamingRun: async (spec: Omit<RunSpec, 'id'>, config: SandboxConfig) => {
+        const { isRunning } = get();
+        if (isRunning) {
+          throw new AppError('A run is already in progress', 'RUN_IN_PROGRESS');
+        }
+
+        // Generate unique ID for this run
+        const runId = `run_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const fullSpec: RunSpec = {
+          ...spec,
+          id: runId,
+        };
+
+        set({
+          isLoading: true,
+          error: null,
+          logs: [], // Clear logs for new run
+        });
+
+        try {
+          const validatedSpec = validateRunSpec(fullSpec);
+
+          const response = await invoke<ApiResponse<RunResult>>('start_eliza_run_streaming', {
+            spec: validatedSpec,
+            config,
+          });
+
+          if (response.success && response.data) {
+            const runResult = response.data;
+
+            set({
+              currentRun: runResult,
+              isRunning: true,
+              isLoading: false,
+              runHistory: [runResult, ...get().runHistory].slice(0, 50), // Keep last 50 runs
+            });
+
+            return runId;
+          } else {
+            throw new AppError(
+              response.error?.message || 'Failed to start streaming run',
+              response.error?.code || 'START_STREAMING_ERROR'
+            );
+          }
+        } catch (error) {
+          console.error('Error starting streaming run:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Failed to start streaming run';
           set({
             isLoading: false,
             error: errorMessage,
@@ -245,7 +303,7 @@ export const useRunnerStore = create<RunnerState>()(
 
       // Preset command: Run doctor
       runDoctor: async (config: SandboxConfig) => {
-        return get().startRun({
+        return get().startStreamingRun({
           mode: 'doctor',
           args: ['doctor'],
           env: {},
@@ -254,7 +312,7 @@ export const useRunnerStore = create<RunnerState>()(
 
       // Preset command: Run with prompt
       runPrompt: async (prompt: string, model: string, config: SandboxConfig) => {
-        return get().startRun({
+        return get().startStreamingRun({
           mode: 'run',
           args: ['run', '-m', model, '-p', prompt],
           env: {},
@@ -263,7 +321,7 @@ export const useRunnerStore = create<RunnerState>()(
 
       // Preset command: Run evaluation
       runEval: async (filePath: string, config: SandboxConfig) => {
-        return get().startRun({
+        return get().startStreamingRun({
           mode: 'eval',
           args: ['eval', '-f', filePath],
           env: {},
@@ -284,7 +342,19 @@ export const initializeLogListeners = async () => {
   if (logListenersSetup) return;
 
   try {
-    // Listen for stdout events
+    // Listen for live log events from streaming runs
+    await listen<LogEvent>('eliza-log', (event) => {
+      const logEvent = event.payload;
+
+      useRunnerStore.getState().addLogEntry({
+        timestamp: new Date(logEvent.timestamp * 1000), // Convert from unix timestamp
+        type: logEvent.logType === 'info' || logEvent.logType === 'error' ? 'system' : logEvent.logType,
+        content: logEvent.message,
+        source: logEvent.runId,
+      });
+    });
+
+    // Legacy listeners for backwards compatibility
     await listen<{ runId: string; content: string }>('eliza-stdout', (event) => {
       useRunnerStore.getState().addLogEntry({
         timestamp: new Date(),
@@ -294,7 +364,6 @@ export const initializeLogListeners = async () => {
       });
     });
 
-    // Listen for stderr events
     await listen<{ runId: string; content: string }>('eliza-stderr', (event) => {
       useRunnerStore.getState().addLogEntry({
         timestamp: new Date(),
@@ -304,7 +373,6 @@ export const initializeLogListeners = async () => {
       });
     });
 
-    // Listen for system events
     await listen<{ runId: string; message: string }>('eliza-system', (event) => {
       useRunnerStore.getState().addLogEntry({
         timestamp: new Date(),
