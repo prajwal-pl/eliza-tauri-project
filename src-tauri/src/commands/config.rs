@@ -1,23 +1,24 @@
 //! Configuration management commands
-//! Handles saving, loading, and testing Sandbox configurations
+//! Handles saving, loading, and testing Sandbox configurations using JSON file storage
 
 use crate::models::{
     ApiResponse, AppError, ConnectionMetadata, ConnectionTestResult, SandboxConfig,
 };
+use tauri::Manager;
 use reqwest::Client;
+use serde_json;
+use std::fs;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
-// Note: Store plugin API may have changed - using simplified approach for MVP
 use tokio::time::timeout;
 
-const STORE_FILE: &str = "config.dat";
-const CONFIG_KEY: &str = "sandbox_config";
+const CONFIG_FILE: &str = "sandbox_config.json";
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Save Sandbox configuration to secure storage
+/// Save Sandbox configuration to JSON file
 #[tauri::command]
 pub async fn save_sandbox_config(
     app: tauri::AppHandle,
-    stores: tauri::State<'_, StoreCollection<tauri::Wry>>,
     config: SandboxConfig,
 ) -> Result<ApiResponse<()>, String> {
     log::info!("Saving Sandbox configuration");
@@ -30,7 +31,7 @@ pub async fn save_sandbox_config(
         ));
     }
 
-    match save_config_to_store(&app, &stores, config).await {
+    match save_config_to_file(&app, &config).await {
         Ok(_) => {
             log::info!("Configuration saved successfully");
             Ok(ApiResponse::success(()))
@@ -45,15 +46,14 @@ pub async fn save_sandbox_config(
     }
 }
 
-/// Load Sandbox configuration from secure storage
+/// Load Sandbox configuration from JSON file
 #[tauri::command]
 pub async fn load_sandbox_config(
     app: tauri::AppHandle,
-    stores: tauri::State<'_, StoreCollection<tauri::Wry>>,
 ) -> Result<ApiResponse<SandboxConfig>, String> {
     log::info!("Loading Sandbox configuration");
 
-    match load_config_from_store(&app, &stores).await {
+    match load_config_from_file(&app).await {
         Ok(Some(config)) => {
             log::info!("Configuration loaded successfully");
             Ok(ApiResponse::success(config))
@@ -79,11 +79,10 @@ pub async fn load_sandbox_config(
 #[tauri::command]
 pub async fn clear_sandbox_config(
     app: tauri::AppHandle,
-    stores: tauri::State<'_, StoreCollection<tauri::Wry>>,
 ) -> Result<ApiResponse<()>, String> {
     log::info!("Clearing Sandbox configuration");
 
-    match clear_config_from_store(&app, &stores).await {
+    match clear_config_file(&app).await {
         Ok(_) => {
             log::info!("Configuration cleared successfully");
             Ok(ApiResponse::success(()))
@@ -138,49 +137,61 @@ pub async fn test_sandbox_connection(
     }
 }
 
-/// Save configuration to Tauri store
-async fn save_config_to_store(
-    app: &tauri::AppHandle,
-    stores: &StoreCollection<tauri::Wry>,
-    config: SandboxConfig,
-) -> Result<(), AppError> {
-    with_store(app.clone(), stores, STORE_FILE, |store| {
-        store.insert(CONFIG_KEY.to_string(), serde_json::to_value(&config)?)?;
-        store.save()?;
-        Ok(())
-    })
-    .map_err(|e| AppError::Config(format!("Failed to save to store: {}", e)))
+/// Get the configuration file path
+fn get_config_path(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
+    let app_data_dir = app.path().app_data_dir()
+        .map_err(|e| AppError::Config(format!("Failed to get app data directory: {}", e)))?;
+
+    // Ensure the directory exists
+    fs::create_dir_all(&app_data_dir)
+        .map_err(|e| AppError::Config(format!("Failed to create app data directory: {}", e)))?;
+
+    Ok(app_data_dir.join(CONFIG_FILE))
 }
 
-/// Load configuration from Tauri store
-async fn load_config_from_store(
-    app: &tauri::AppHandle,
-    stores: &StoreCollection<tauri::Wry>,
-) -> Result<Option<SandboxConfig>, AppError> {
-    with_store(app.clone(), stores, STORE_FILE, |store| {
-        match store.get(CONFIG_KEY) {
-            Some(value) => {
-                let config: SandboxConfig = serde_json::from_value(value.clone())
-                    .map_err(|e| AppError::Serialization(e))?;
-                Ok(Some(config))
-            }
-            None => Ok(None),
-        }
-    })
-    .map_err(|e| AppError::Config(format!("Failed to load from store: {}", e)))
+/// Save configuration to JSON file
+async fn save_config_to_file(app: &tauri::AppHandle, config: &SandboxConfig) -> Result<(), AppError> {
+    let config_path = get_config_path(app)?;
+
+    let json_data = serde_json::to_string_pretty(config)
+        .map_err(|e| AppError::Serialization(e))?;
+
+    fs::write(&config_path, json_data)
+        .map_err(|e| AppError::Config(format!("Failed to write config file: {}", e)))?;
+
+    log::debug!("Configuration saved to: {:?}", config_path);
+    Ok(())
 }
 
-/// Clear configuration from Tauri store
-async fn clear_config_from_store(
-    app: &tauri::AppHandle,
-    stores: &StoreCollection<tauri::Wry>,
-) -> Result<(), AppError> {
-    with_store(app.clone(), stores, STORE_FILE, |store| {
-        store.delete(CONFIG_KEY);
-        store.save()?;
-        Ok(())
-    })
-    .map_err(|e| AppError::Config(format!("Failed to clear from store: {}", e)))
+/// Load configuration from JSON file
+async fn load_config_from_file(app: &tauri::AppHandle) -> Result<Option<SandboxConfig>, AppError> {
+    let config_path = get_config_path(app)?;
+
+    if !config_path.exists() {
+        return Ok(None);
+    }
+
+    let json_data = fs::read_to_string(&config_path)
+        .map_err(|e| AppError::Config(format!("Failed to read config file: {}", e)))?;
+
+    let config: SandboxConfig = serde_json::from_str(&json_data)
+        .map_err(|e| AppError::Serialization(e))?;
+
+    log::debug!("Configuration loaded from: {:?}", config_path);
+    Ok(Some(config))
+}
+
+/// Clear configuration file
+async fn clear_config_file(app: &tauri::AppHandle) -> Result<(), AppError> {
+    let config_path = get_config_path(app)?;
+
+    if config_path.exists() {
+        fs::remove_file(&config_path)
+            .map_err(|e| AppError::Config(format!("Failed to delete config file: {}", e)))?;
+        log::debug!("Configuration file deleted: {:?}", config_path);
+    }
+
+    Ok(())
 }
 
 /// Perform actual connection test to Sandbox API

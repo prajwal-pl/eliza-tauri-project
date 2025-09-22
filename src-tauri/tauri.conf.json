@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.elizaos.desktop-cli",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run vite:dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run vite:build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -26,48 +26,7 @@
   },
   "plugins": {
     "shell": {
-      "open": true,
-      "scope": [
-        {
-          "name": "node",
-          "cmd": "node",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "npm",
-          "cmd": "npm",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "npx",
-          "cmd": "npx",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "eliza",
-          "cmd": "eliza",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "which",
-          "cmd": "which",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "where",
-          "cmd": "where",
-          "args": true,
-          "sidecar": false
-        }
-      ]
-    },
-    "store": {
-      "default": true
+      "open": true
     },
     "os": {
       "all": true

@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
+    "vite:dev": "vite",
+    "vite:build": "vite build",
     "build": "tauri build",
     "build:debug": "tauri build --debug",
     "preview": "vite preview",

@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    tauri_app_lib::run()
+    mvp_tauri_eliza_cli_lib::run()
 }

@@ -5,8 +5,14 @@ pub mod commands;
 pub mod models;
 
 use commands::*;
+use commands::process::get_run_result;
 use log::info;
-use tauri_plugin_store::StoreCollection;
+
+/// Basic greet command for IPC testing
+#[tauri::command]
+fn greet(name: &str) -> String {
+    format!("Hello, {}! ElizaOS Desktop is running.", name)
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,15 +31,16 @@ pub fn run() {
         // Initialize plugins
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_os::init())
 
         // Register global state
         .manage(process_registry)
-        .manage(StoreCollection::<tauri::Wry>::default())
 
         // Register command handlers
         .invoke_handler(tauri::generate_handler![
+            // Basic IPC commands
+            greet,
+
             // Configuration commands
             save_sandbox_config,
             load_sandbox_config,
@@ -47,6 +54,7 @@ pub fn run() {
             start_eliza_run,
             stop_eliza_run,
             kill_eliza_run,
+            get_run_result,
 
             // Telemetry commands
             post_telemetry,

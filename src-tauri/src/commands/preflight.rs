@@ -3,7 +3,7 @@
 
 use crate::models::{ApiResponse, AppError, PreflightResult, ToolCheck};
 use std::process::Command;
-use tauri_plugin_os::{platform, Platform};
+use tauri_plugin_os::platform;
 
 /// Run comprehensive preflight checks
 #[tauri::command]
@@ -177,9 +177,10 @@ async fn check_tool_version(
 
 /// Get the appropriate "which" command for the current platform
 fn get_which_command() -> &'static str {
-    match platform() {
-        Platform::Windows => "where",
-        _ => "which",
+    if platform().to_string().to_lowercase().contains("windows") {
+        "where"
+    } else {
+        "which"
     }
 }
 
@@ -232,28 +233,24 @@ pub fn get_system_info() -> String {
 /// Generate installation recommendations based on platform
 pub fn get_installation_recommendations() -> Vec<String> {
     let mut recommendations = Vec::new();
+    let platform_str = platform().to_string().to_lowercase();
 
-    match platform() {
-        Platform::Windows => {
-            recommendations.push("Install Node.js from https://nodejs.org/ (choose LTS version)".to_string());
-            recommendations.push("npm comes bundled with Node.js".to_string());
-            recommendations.push("ElizaOS CLI will be installed automatically when needed".to_string());
-        }
-        Platform::MacOS => {
-            recommendations.push("Install Node.js via Homebrew: brew install node".to_string());
-            recommendations.push("Or download from https://nodejs.org/ (choose LTS version)".to_string());
-            recommendations.push("ElizaOS CLI will be installed automatically when needed".to_string());
-        }
-        Platform::Linux => {
-            recommendations.push("Install Node.js via package manager or from https://nodejs.org/".to_string());
-            recommendations.push("Ubuntu/Debian: sudo apt install nodejs npm".to_string());
-            recommendations.push("CentOS/RHEL: sudo yum install nodejs npm".to_string());
-            recommendations.push("ElizaOS CLI will be installed automatically when needed".to_string());
-        }
-        _ => {
-            recommendations.push("Install Node.js 18+ from https://nodejs.org/".to_string());
-            recommendations.push("Ensure npm is available".to_string());
-        }
+    if platform_str.contains("windows") {
+        recommendations.push("Install Node.js from https://nodejs.org/ (choose LTS version)".to_string());
+        recommendations.push("npm comes bundled with Node.js".to_string());
+        recommendations.push("ElizaOS CLI will be installed automatically when needed".to_string());
+    } else if platform_str.contains("darwin") || platform_str.contains("macos") {
+        recommendations.push("Install Node.js via Homebrew: brew install node".to_string());
+        recommendations.push("Or download from https://nodejs.org/ (choose LTS version)".to_string());
+        recommendations.push("ElizaOS CLI will be installed automatically when needed".to_string());
+    } else if platform_str.contains("linux") {
+        recommendations.push("Install Node.js via package manager or from https://nodejs.org/".to_string());
+        recommendations.push("Ubuntu/Debian: sudo apt install nodejs npm".to_string());
+        recommendations.push("CentOS/RHEL: sudo yum install nodejs npm".to_string());
+        recommendations.push("ElizaOS CLI will be installed automatically when needed".to_string());
+    } else {
+        recommendations.push("Install Node.js 18+ from https://nodejs.org/".to_string());
+        recommendations.push("Ensure npm is available".to_string());
     }
 
     recommendations
