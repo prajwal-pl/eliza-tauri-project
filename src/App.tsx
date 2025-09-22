@@ -1,50 +1,106 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { useAppStore } from './stores/appStore';
+import { useConfigStore } from './stores/configStore';
+import { initializeLogListeners } from './stores/runnerStore';
+import SettingsPage from './components/Settings/SettingsPage';
+import RunnerPage from './components/Runner/RunnerPage';
+import './App.css';
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const { currentView, isLoading, error, initialize, clearError } = useAppStore();
+  const { loadConfig } = useConfigStore();
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+  useEffect(() => {
+    // Initialize the application
+    const initApp = async () => {
+      try {
+        await initialize();
+        await loadConfig();
+        await initializeLogListeners();
+      } catch (error) {
+        console.error('Failed to initialize app:', error);
+      }
+    };
+
+    initApp();
+  }, [initialize, loadConfig]);
+
+  const handleTestCommand = async () => {
+    try {
+      // Test basic IPC - this should work even if other commands fail
+      const result = await invoke('greet', { name: 'ElizaOS Desktop' });
+      console.log('Test result:', result);
+    } catch (error) {
+      console.error('Test failed:', error);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="app-loading">
+        <div className="loading-spinner"></div>
+        <p>Loading ElizaOS CLI Desktop...</p>
+      </div>
+    );
   }
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <div className="app">
+      <header className="app-header">
+        <div className="header-content">
+          <h1 className="app-title">ElizaOS CLI Desktop</h1>
+          <div className="header-controls">
+            <button
+              onClick={handleTestCommand}
+              className="test-button"
+              title="Test IPC Communication"
+            >
+              Test IPC
+            </button>
+          </div>
+        </div>
+      </header>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+      <nav className="app-nav">
+        <div className="nav-tabs">
+          <button
+            className={`nav-tab ${currentView === 'settings' ? 'active' : ''}`}
+            onClick={() => useAppStore.getState().setCurrentView('settings')}
+          >
+            Settings
+          </button>
+          <button
+            className={`nav-tab ${currentView === 'runner' ? 'active' : ''}`}
+            onClick={() => useAppStore.getState().setCurrentView('runner')}
+          >
+            Runner
+          </button>
+        </div>
+      </nav>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      <main className="app-main">
+        {error && (
+          <div className="error-banner">
+            <span className="error-message">{error}</span>
+            <button onClick={clearError} className="error-dismiss">×</button>
+          </div>
+        )}
+
+        <div className="page-container">
+          {currentView === 'settings' ? <SettingsPage /> : <RunnerPage />}
+        </div>
+      </main>
+
+      <footer className="app-footer">
+        <div className="footer-content">
+          <span className="version">v0.1.0</span>
+          <span className="status-indicator">
+            {isLoading ? 'Loading...' : 'Ready'}
+          </span>
+        </div>
+      </footer>
+    </div>
   );
 }
 
