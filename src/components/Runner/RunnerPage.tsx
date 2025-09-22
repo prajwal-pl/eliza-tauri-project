@@ -12,6 +12,8 @@ const RunnerPage: React.FC = () => {
     autoScroll,
     runDoctor,
     runPrompt,
+    stopRun,
+    killRun,
     clearLogs,
     setAutoScroll
   } = useRunnerStore();
@@ -85,6 +87,27 @@ const RunnerPage: React.FC = () => {
           >
             {isRunning ? 'Running...' : 'Run Test Prompt'}
           </button>
+
+          {isRunning && currentRun && (
+            <div className="process-controls">
+              <button
+                onClick={() => stopRun()}
+                disabled={isLoading}
+                className="control-button stop"
+                title="Stop process gracefully (SIGTERM)"
+              >
+                Stop
+              </button>
+              <button
+                onClick={() => killRun()}
+                disabled={isLoading}
+                className="control-button kill"
+                title="Force kill process (SIGKILL)"
+              >
+                Kill
+              </button>
+            </div>
+          )}
         </div>
 
         {currentRun && (
@@ -98,6 +121,9 @@ const RunnerPage: React.FC = () => {
 
             <div className="run-details">
               <div>Mode: {currentRun.spec.mode}</div>
+              {currentRun.pid && (
+                <div>PID: {currentRun.pid}</div>
+              )}
               <div>Started: {new Date(currentRun.startedAt).toLocaleTimeString()}</div>
               {currentRun.endedAt && (
                 <div>Ended: {new Date(currentRun.endedAt).toLocaleTimeString()}</div>

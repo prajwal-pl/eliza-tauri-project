@@ -303,7 +303,7 @@ mod tests {
         let event = create_telemetry_event_from_run(
             "device123".to_string(),
             "run",
-            &["run", "-m", "gpt-4"],
+            &["run".to_string(), "-m".to_string(), "gpt-4".to_string()],
             "2023-01-01T00:00:00Z",
             5000,
             0,

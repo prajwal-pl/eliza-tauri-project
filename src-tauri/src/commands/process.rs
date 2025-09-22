@@ -10,8 +10,32 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::{Mutex, RwLock};
 
+// Structure to track running processes
+#[derive(Debug, Clone)]
+pub struct ProcessHandle {
+    pub run_result: RunResult,
+    pub can_control: bool, // Whether the process can be controlled
+}
+
+impl ProcessHandle {
+    pub fn new(run_result: RunResult) -> Self {
+        Self {
+            run_result,
+            can_control: true,
+        }
+    }
+
+    pub fn update_result(&mut self, new_result: RunResult) {
+        self.run_result = new_result;
+    }
+
+    pub fn mark_completed(&mut self) {
+        self.can_control = false;
+    }
+}
+
 // Global process registry to track running processes
-type ProcessRegistry = Arc<RwLock<HashMap<String, Arc<Mutex<RunResult>>>>>;
+type ProcessRegistry = Arc<RwLock<HashMap<String, Arc<Mutex<ProcessHandle>>>>>;
 
 /// Start a new ElizaOS CLI run with live log streaming
 #[tauri::command]
@@ -78,27 +102,197 @@ pub async fn start_eliza_run(
 /// Stop a running ElizaOS CLI process gracefully
 #[tauri::command]
 pub async fn stop_eliza_run(
-    _app: AppHandle,
+    app: AppHandle,
     run_id: String,
-) -> Result<ApiResponse<()>, String> {
+) -> Result<ApiResponse<RunResult>, String> {
     log::info!("Stopping ElizaOS CLI run: {}", run_id);
 
-    // For MVP, we'll implement simple process tracking
-    // In production, this would track and terminate actual processes
-    Ok(ApiResponse::success(()))
+    let registry = get_process_registry(&app);
+    let mut guard = registry.write().await;
+
+    match guard.get_mut(&run_id) {
+        Some(process_handle_arc) => {
+            let mut process_handle = process_handle_arc.lock().await;
+
+            if process_handle.can_control {
+                if let Some(pid) = process_handle.run_result.pid {
+                    // Use system command to send SIGTERM
+                    log::info!("Sending SIGTERM to process: PID={}, run_id={}", pid, run_id);
+
+                    #[cfg(unix)]
+                    {
+                        use nix::sys::signal::{kill, Signal};
+                        use nix::unistd::Pid;
+
+                        match kill(Pid::from_raw(pid as i32), Signal::SIGTERM) {
+                            Ok(_) => {
+                                log::info!("Successfully sent SIGTERM to PID: {}", pid);
+                                process_handle.run_result.status = RunStatus::Killed;
+                                process_handle.run_result.ended_at = Some(crate::models::current_timestamp());
+                                process_handle.mark_completed();
+
+                                let result = process_handle.run_result.clone();
+                                Ok(ApiResponse::success(result))
+                            }
+                            Err(e) => {
+                                log::error!("Failed to send SIGTERM to PID {}: {}", pid, e);
+                                Ok(ApiResponse::error(
+                                    "STOP_ERROR".to_string(),
+                                    format!("Failed to stop process (PID: {}): {}", pid, e),
+                                ))
+                            }
+                        }
+                    }
+
+                    #[cfg(not(unix))]
+                    {
+                        // On non-Unix systems, use std::process to terminate
+                        match std::process::Command::new("taskkill")
+                            .args(["/PID", &pid.to_string(), "/T", "/F"])
+                            .output()
+                        {
+                            Ok(output) => {
+                                if output.status.success() {
+                                    log::info!("Successfully terminated process PID: {}", pid);
+                                    process_handle.run_result.status = RunStatus::Killed;
+                                    process_handle.run_result.ended_at = Some(crate::models::current_timestamp());
+                                    process_handle.mark_completed();
+
+                                    let result = process_handle.run_result.clone();
+                                    Ok(ApiResponse::success(result))
+                                } else {
+                                    let error = String::from_utf8_lossy(&output.stderr);
+                                    Ok(ApiResponse::error(
+                                        "STOP_ERROR".to_string(),
+                                        format!("Failed to stop process: {}", error),
+                                    ))
+                                }
+                            }
+                            Err(e) => {
+                                Ok(ApiResponse::error(
+                                    "STOP_ERROR".to_string(),
+                                    format!("Failed to stop process: {}", e),
+                                ))
+                            }
+                        }
+                    }
+                } else {
+                    Ok(ApiResponse::error(
+                        "NO_PID".to_string(),
+                        "Process has no PID available for control".to_string(),
+                    ))
+                }
+            } else {
+                // Process already finished
+                let result = process_handle.run_result.clone();
+                Ok(ApiResponse::success(result))
+            }
+        }
+        None => {
+            Ok(ApiResponse::error(
+                "NOT_FOUND".to_string(),
+                format!("Run {} not found or already completed", run_id),
+            ))
+        }
+    }
 }
 
 /// Kill a running ElizaOS CLI process forcefully
 #[tauri::command]
 pub async fn kill_eliza_run(
-    _app: AppHandle,
+    app: AppHandle,
     run_id: String,
-) -> Result<ApiResponse<()>, String> {
+) -> Result<ApiResponse<RunResult>, String> {
     log::info!("Killing ElizaOS CLI run: {}", run_id);
 
-    // For MVP, we'll implement simple process tracking
-    // In production, this would forcefully terminate processes
-    Ok(ApiResponse::success(()))
+    let registry = get_process_registry(&app);
+    let mut guard = registry.write().await;
+
+    match guard.get_mut(&run_id) {
+        Some(process_handle_arc) => {
+            let mut process_handle = process_handle_arc.lock().await;
+
+            if process_handle.can_control {
+                if let Some(pid) = process_handle.run_result.pid {
+                    // Force kill the process (SIGKILL)
+                    log::info!("Force killing process: PID={}, run_id={}", pid, run_id);
+
+                    #[cfg(unix)]
+                    {
+                        use nix::sys::signal::{kill, Signal};
+                        use nix::unistd::Pid;
+
+                        match kill(Pid::from_raw(pid as i32), Signal::SIGKILL) {
+                            Ok(_) => {
+                                log::info!("Successfully sent SIGKILL to PID: {}", pid);
+                                process_handle.run_result.status = RunStatus::Killed;
+                                process_handle.run_result.ended_at = Some(crate::models::current_timestamp());
+                                process_handle.mark_completed();
+
+                                let result = process_handle.run_result.clone();
+                                Ok(ApiResponse::success(result))
+                            }
+                            Err(e) => {
+                                log::error!("Failed to send SIGKILL to PID {}: {}", pid, e);
+                                Ok(ApiResponse::error(
+                                    "KILL_ERROR".to_string(),
+                                    format!("Failed to kill process (PID: {}): {}", pid, e),
+                                ))
+                            }
+                        }
+                    }
+
+                    #[cfg(not(unix))]
+                    {
+                        // On non-Unix systems, use taskkill with /F (force)
+                        match std::process::Command::new("taskkill")
+                            .args(["/PID", &pid.to_string(), "/T", "/F"])
+                            .output()
+                        {
+                            Ok(output) => {
+                                if output.status.success() {
+                                    log::info!("Successfully force-terminated process PID: {}", pid);
+                                    process_handle.run_result.status = RunStatus::Killed;
+                                    process_handle.run_result.ended_at = Some(crate::models::current_timestamp());
+                                    process_handle.mark_completed();
+
+                                    let result = process_handle.run_result.clone();
+                                    Ok(ApiResponse::success(result))
+                                } else {
+                                    let error = String::from_utf8_lossy(&output.stderr);
+                                    Ok(ApiResponse::error(
+                                        "KILL_ERROR".to_string(),
+                                        format!("Failed to kill process: {}", error),
+                                    ))
+                                }
+                            }
+                            Err(e) => {
+                                Ok(ApiResponse::error(
+                                    "KILL_ERROR".to_string(),
+                                    format!("Failed to kill process: {}", e),
+                                ))
+                            }
+                        }
+                    }
+                } else {
+                    Ok(ApiResponse::error(
+                        "NO_PID".to_string(),
+                        "Process has no PID available for control".to_string(),
+                    ))
+                }
+            } else {
+                // Process already finished
+                let result = process_handle.run_result.clone();
+                Ok(ApiResponse::success(result))
+            }
+        }
+        None => {
+            Ok(ApiResponse::error(
+                "NOT_FOUND".to_string(),
+                format!("Run {} not found or already completed", run_id),
+            ))
+        }
+    }
 }
 
 /// Execute ElizaOS CLI run with simplified process management
@@ -284,6 +478,18 @@ async fn execute_eliza_run_streaming(
     // Spawn the process
     match command.spawn() {
         Ok(mut child) => {
+            // Capture process ID and create initial process handle entry
+            if let Some(pid) = child.id() {
+                run_result.pid = Some(pid);
+                log::info!("Started ElizaOS CLI process: PID={}", pid);
+
+                // Register process in registry for control operations
+                let registry = get_process_registry(&app);
+                let process_handle = ProcessHandle::new(run_result.clone());
+                let process_handle_arc = Arc::new(Mutex::new(process_handle));
+                registry.write().await.insert(run_id.clone(), process_handle_arc);
+            }
+
             // Get stdout and stderr handles
             let stdout = child.stdout.take().ok_or_else(|| {
                 AppError::Process("Failed to get stdout handle".to_string())
@@ -292,6 +498,7 @@ async fn execute_eliza_run_streaming(
             let stderr = child.stderr.take().ok_or_else(|| {
                 AppError::Process("Failed to get stderr handle".to_string())
             })?;
+
 
             // Spawn tasks for streaming logs
             let app_stdout = app.clone();
@@ -356,6 +563,16 @@ async fn execute_eliza_run_streaming(
             run_result.stderr = stderr_lines;
             run_result.ended_at = Some(crate::models::current_timestamp());
             run_result.duration_ms = Some(start_time.elapsed().as_millis() as u64);
+
+            // Update the process handle in the registry with the final result
+            let registry = get_process_registry(&app);
+            let mut guard = registry.write().await;
+            if let Some(process_handle_arc) = guard.get_mut(&run_id) {
+                let mut process_handle = process_handle_arc.lock().await;
+                process_handle.update_result(run_result.clone());
+                // Mark process as completed (no longer controllable)
+                process_handle.mark_completed();
+            }
 
             // Emit completion event
             let status_msg = match run_result.status {
@@ -518,9 +735,10 @@ pub async fn get_run_result(
     let guard = registry.read().await;
 
     match guard.get(&run_id) {
-        Some(run_mutex) => {
-            let run = run_mutex.lock().await.clone();
-            Ok(ApiResponse::success(run))
+        Some(process_handle_arc) => {
+            let process_handle = process_handle_arc.lock().await;
+            let run_result = process_handle.run_result.clone();
+            Ok(ApiResponse::success(run_result))
         }
         None => {
             Ok(ApiResponse::error(
@@ -568,9 +786,11 @@ mod tests {
     async fn test_build_eliza_args() {
         let spec = RunSpec {
             id: "test".to_string(),
-            mode: "doctor".to_string(),
+            mode: RunMode::Doctor,
             args: vec!["--verbose".to_string()],
             working_dir: None,
+            character_file: None,
+            env: std::collections::HashMap::new(),
         };
 
         let config = SandboxConfig {
@@ -580,8 +800,10 @@ mod tests {
             default_model: Some("gpt-4".to_string()),
         };
 
-        let args = build_eliza_args(&spec, &config).unwrap();
-        assert!(args.contains(&"doctor".to_string()));
+        let args = build_eliza_args(&spec, &config, true).unwrap();
+        assert!(args.contains(&"start".to_string()));
+        assert!(args.contains(&"--mode".to_string()));
+        assert!(args.contains(&"diagnostic".to_string()));
         assert!(args.contains(&"--verbose".to_string()));
     }
 
@@ -595,9 +817,10 @@ mod tests {
         };
 
         let env = build_eliza_env(&config);
-        assert_eq!(env.get("ELIZA_SANDBOX_BASE_URL"), Some(&"https://api.example.com".to_string()));
-        assert_eq!(env.get("ELIZA_SANDBOX_API_KEY"), Some(&"eliza_test_key".to_string()));
-        assert_eq!(env.get("ELIZA_SANDBOX_PROJECT_ID"), Some(&"test-project".to_string()));
-        assert_eq!(env.get("ELIZA_DEFAULT_MODEL"), Some(&"gpt-4".to_string()));
+        assert_eq!(env.get("SANDBOX_BASE_URL"), Some(&"https://api.example.com".to_string()));
+        assert_eq!(env.get("SANDBOX_API_KEY"), Some(&"eliza_test_key".to_string()));
+        assert_eq!(env.get("SANDBOX_PROJECT_ID"), Some(&"test-project".to_string()));
+        assert_eq!(env.get("DEFAULT_MODEL"), Some(&"gpt-4".to_string()));
+        assert_eq!(env.get("OPENAI_API_KEY"), Some(&"sandbox".to_string()));
     }
 }

@@ -58,6 +58,7 @@ export interface RunResult {
   stderr: string[];
   durationMs?: number;
   status: 'running' | 'completed' | 'failed' | 'killed';
+  pid?: number; // Process ID for active process management
 }
 
 // ============================================================================

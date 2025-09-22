@@ -118,6 +118,7 @@ pub struct RunResult {
     pub stderr: Vec<String>,
     pub duration_ms: Option<u64>,
     pub status: RunStatus,
+    pub pid: Option<u32>, // Process ID for active process management
 }
 
 impl RunResult {
@@ -132,7 +133,13 @@ impl RunResult {
             stderr: Vec::new(),
             duration_ms: None,
             status: RunStatus::Running,
+            pid: None, // Will be set when process starts
         }
+    }
+
+    pub fn with_pid(mut self, pid: u32) -> Self {
+        self.pid = Some(pid);
+        self
     }
 
     pub fn complete(mut self, exit_code: i32, ended_at: String, duration_ms: u64) -> Self {
