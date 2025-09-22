@@ -81,12 +81,12 @@ async fn execute_eliza_run_simple(
     let mut run_result = RunResult::new(spec.clone(), run_id.clone());
 
     // Determine ElizaOS CLI command
-    let eliza_cmd = resolve_eliza_command().await?;
+    let (eliza_cmd, use_npx) = resolve_eliza_command().await?;
 
-    log::debug!("Using ElizaOS command: {}", eliza_cmd);
+    log::debug!("Using ElizaOS command: {} (npx: {})", eliza_cmd, use_npx);
 
     // Build command arguments based on mode
-    let args = build_eliza_args(&spec, &config)?;
+    let args = build_eliza_args(&spec, &config, use_npx)?;
 
     // Sanitize arguments for logging (remove sensitive information)
     let safe_args: Vec<String> = args.iter()
@@ -106,61 +106,148 @@ async fn execute_eliza_run_simple(
         spec.working_dir
     );
 
-    // For MVP, we'll simulate execution and provide test output
-    run_result.status = RunStatus::Completed;
-    run_result.stdout.push("ElizaOS CLI execution started (simulated for MVP)".to_string());
-    run_result.stdout.push(format!("Mode: {}", spec.mode));
-    run_result.stdout.push(format!("Args: {:?}", safe_args));
-    run_result.ended_at = Some(crate::models::current_timestamp());
-    run_result.duration_ms = Some(1000); // Simulate 1 second execution
-    run_result.exit_code = Some(0);
+    // Build environment variables for ElizaOS CLI execution
+    let env = build_eliza_env(&config);
+
+    // Spawn the real ElizaOS CLI process
+    let mut command = Command::new(&eliza_cmd);
+    command.args(&args);
+    command.envs(&env);
+
+    if let Some(ref wd) = spec.working_dir {
+        command.current_dir(wd);
+    }
+
+    // Configure for stdout/stderr capture
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+
+    let start_time = std::time::Instant::now();
+    run_result.status = RunStatus::Running;
+
+    log::info!("Spawning real ElizaOS CLI process: {} {:?}", eliza_cmd, safe_args);
+
+    // Execute and capture output
+    match command.spawn() {
+        Ok(child) => {
+            // Wait for completion and capture output
+            match child.wait_with_output() {
+                Ok(output) => {
+                    // Update run result with real data
+                    run_result.status = if output.status.success() {
+                        RunStatus::Completed
+                    } else {
+                        RunStatus::Failed
+                    };
+
+                    run_result.stdout = String::from_utf8_lossy(&output.stdout)
+                        .lines()
+                        .map(|s| s.to_string())
+                        .collect();
+
+                    run_result.stderr = String::from_utf8_lossy(&output.stderr)
+                        .lines()
+                        .map(|s| s.to_string())
+                        .collect();
+
+                    run_result.exit_code = output.status.code();
+                    run_result.ended_at = Some(crate::models::current_timestamp());
+                    run_result.duration_ms = Some(start_time.elapsed().as_millis() as u64);
+
+                    log::info!(
+                        "ElizaOS CLI process completed: exit_code={:?}, duration={}ms",
+                        output.status.code(),
+                        start_time.elapsed().as_millis()
+                    );
+                }
+                Err(e) => {
+                    run_result.status = RunStatus::Failed;
+                    run_result.stderr.push(format!("Failed to wait for process: {}", e));
+                    run_result.ended_at = Some(crate::models::current_timestamp());
+                    run_result.duration_ms = Some(start_time.elapsed().as_millis() as u64);
+                    log::error!("Failed to wait for ElizaOS CLI process: {}", e);
+                }
+            }
+        }
+        Err(e) => {
+            run_result.status = RunStatus::Failed;
+            run_result.stderr.push(format!("Failed to start process: {}", e));
+            run_result.ended_at = Some(crate::models::current_timestamp());
+            run_result.duration_ms = Some(start_time.elapsed().as_millis() as u64);
+            log::error!("Failed to spawn ElizaOS CLI process: {}", e);
+        }
+    }
 
     Ok(run_result)
 }
 
 /// Resolve the ElizaOS CLI command to use
-async fn resolve_eliza_command() -> Result<String, AppError> {
-    // Try to find eliza CLI directly first
-    if let Ok(output) = Command::new("which").arg("eliza").output() {
+async fn resolve_eliza_command() -> Result<(String, bool), AppError> {
+    // Try elizaos command (from @elizaos/cli package)
+    if let Ok(output) = Command::new("elizaos").arg("--version").output() {
         if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                log::debug!("Found eliza CLI at: {}", path);
-                return Ok("eliza".to_string());
+            log::debug!("Found elizaos CLI locally installed");
+            return Ok(("elizaos".to_string(), false));
+        }
+    }
+
+    // Try npx approach with correct package
+    if let Ok(output) = Command::new("npx")
+        .args(["-y", "@elizaos/cli@latest", "--version"])
+        .output() {
+        if output.status.success() {
+            log::debug!("ElizaOS CLI available via npx");
+            return Ok(("npx".to_string(), true));
+        }
+    }
+
+    Err(AppError::CliNotFound(
+        "ElizaOS CLI not available. Please install with: npm install -g @elizaos/cli@latest".to_string()
+    ))
+}
+
+/// Build ElizaOS CLI arguments based on run specification
+fn build_eliza_args(spec: &RunSpec, _config: &SandboxConfig, use_npx: bool) -> Result<Vec<String>, AppError> {
+    let mut args = Vec::new();
+
+    // If using npx, add the package specification
+    if use_npx {
+        args.push("-y".to_string());
+        args.push("@elizaos/cli@latest".to_string());
+    }
+
+    // Real ElizaOS CLI commands based on the documentation
+    match spec.mode {
+        RunMode::Doctor => {
+            // Use 'start' for doctor mode - ElizaOS CLI diagnostic
+            args.push("start".to_string());
+            args.push("--mode".to_string());
+            args.push("diagnostic".to_string());
+        },
+        RunMode::Run => {
+            // Standard elizaos start command
+            args.push("start".to_string());
+        },
+        RunMode::Eval => {
+            // Development mode
+            args.push("dev".to_string());
+        },
+        RunMode::Custom => {
+            // Custom command from spec.args[0] if available
+            if !spec.args.is_empty() {
+                args.push(spec.args[0].clone());
+            } else {
+                args.push("start".to_string());
             }
         }
     }
 
-    // Fall back to npx approach
-    log::debug!("ElizaOS CLI not found in PATH, using npx");
-    Ok("npx".to_string())
-}
+    // Add character file if specified in the future
+    // This will be implemented in Step 4
 
-/// Build ElizaOS CLI arguments based on run specification
-fn build_eliza_args(spec: &RunSpec, _config: &SandboxConfig) -> Result<Vec<String>, AppError> {
-    let mut args = Vec::new();
-
-    // If using npx, add the package specification
-    if args.is_empty() {
-        // This will be set if we're using npx
-        args.push("-y".to_string());
-        args.push("eliza@latest".to_string());
-    }
-
-    // Add the mode command
-    match spec.mode {
-        RunMode::Doctor => args.push("doctor".to_string()),
-        RunMode::Run => args.push("run".to_string()),
-        RunMode::Eval => args.push("eval".to_string()),
-        RunMode::Custom => args.push("custom".to_string()),
-    }
-
-    // Add Sandbox configuration as environment variables
-    // Note: In real implementation, these would be set as environment variables
-    // For MVP, we'll add them as arguments for demonstration
-
-    // Add any additional arguments from the spec
-    args.extend(spec.args.clone());
+    // Add additional arguments (skip first for Custom mode since it's the command)
+    let skip_count = if matches!(spec.mode, RunMode::Custom) && !spec.args.is_empty() { 1 } else { 0 };
+    args.extend(spec.args.iter().skip(skip_count).cloned());
 
     Ok(args)
 }
@@ -169,18 +256,24 @@ fn build_eliza_args(spec: &RunSpec, _config: &SandboxConfig) -> Result<Vec<Strin
 fn build_eliza_env(config: &SandboxConfig) -> HashMap<String, String> {
     let mut env = HashMap::new();
 
-    // Set Sandbox configuration
-    env.insert("ELIZA_SANDBOX_BASE_URL".to_string(), config.base_url.clone());
-    env.insert("ELIZA_SANDBOX_API_KEY".to_string(), config.api_key.clone());
-    env.insert("ELIZA_SANDBOX_PROJECT_ID".to_string(), config.project_id.clone());
+    // Standard environment variables that ElizaOS CLI expects
+    // Using sandbox as a placeholder since we're using Sandbox API
+    env.insert("OPENAI_API_KEY".to_string(), "sandbox".to_string());
+
+    // Sandbox-specific environment variables for ElizaOS CLI
+    env.insert("SANDBOX_BASE_URL".to_string(), config.base_url.clone());
+    env.insert("SANDBOX_API_KEY".to_string(), config.api_key.clone());
+    env.insert("SANDBOX_PROJECT_ID".to_string(), config.project_id.clone());
 
     if let Some(ref model) = config.default_model {
-        env.insert("ELIZA_DEFAULT_MODEL".to_string(), model.clone());
+        env.insert("DEFAULT_MODEL".to_string(), model.clone());
     }
 
-    // Set other useful environment variables
+    // ElizaOS-specific environment variables
     env.insert("NODE_ENV".to_string(), "production".to_string());
     env.insert("ELIZA_DESKTOP".to_string(), "true".to_string());
+
+    log::debug!("Built environment variables for ElizaOS CLI (API keys redacted)");
 
     env
 }

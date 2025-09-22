@@ -91,8 +91,8 @@ async fn check_npm() -> Result<ToolCheck, AppError> {
 
 /// Check ElizaOS CLI installation
 async fn check_eliza_cli() -> Result<ToolCheck, AppError> {
-    // First try to find eliza CLI directly
-    match check_tool_version("eliza", "--version").await {
+    // First try to find elizaos CLI directly (updated from eliza)
+    match check_tool_version("elizaos", "--version").await {
         Ok(Some((version, path))) => {
             log::debug!("Found ElizaOS CLI {} at {}", version, path);
             return Ok(ToolCheck::found(version, path));
@@ -108,7 +108,7 @@ async fn check_eliza_cli() -> Result<ToolCheck, AppError> {
             log::debug!("ElizaOS CLI available via npx");
             Ok(ToolCheck::found(
                 "available via npx".to_string(),
-                "npx eliza".to_string(),
+                "npx @elizaos/cli".to_string(),
             ))
         }
         Ok(false) => {
@@ -116,7 +116,7 @@ async fn check_eliza_cli() -> Result<ToolCheck, AppError> {
             Ok(ToolCheck::not_found())
         }
         Err(e) => {
-            log::warn!("Error checking npx eliza: {}", e);
+            log::warn!("Error checking npx elizaos: {}", e);
             Ok(ToolCheck::not_found())
         }
     }
@@ -125,14 +125,14 @@ async fn check_eliza_cli() -> Result<ToolCheck, AppError> {
 /// Check if ElizaOS CLI is available via npx
 async fn check_npx_eliza() -> Result<bool, AppError> {
     let output = Command::new("npx")
-        .args(["--yes", "eliza", "--help"])
+        .args(["-y", "@elizaos/cli@latest", "--version"])
         .output()
         .map_err(|e| AppError::Process(format!("Failed to run npx: {}", e)))?;
 
-    // If the command succeeds and contains help text, eliza is available
+    // If the command succeeds and returns a version, ElizaOS CLI is available
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(stdout.contains("ElizaOS") || stdout.contains("Usage:") || stdout.contains("Commands:"))
+        Ok(!stdout.trim().is_empty() && (stdout.contains(".") || stdout.contains("1")))
     } else {
         Ok(false)
     }

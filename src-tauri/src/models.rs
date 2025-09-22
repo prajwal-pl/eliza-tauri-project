@@ -386,6 +386,15 @@ pub enum AppError {
     #[error("Process error: {0}")]
     Process(String),
 
+    #[error("CLI not found: {0}")]
+    CliNotFound(String),
+
+    #[error("Environment setup failed: {0}")]
+    EnvironmentError(String),
+
+    #[error("Character file error: {0}")]
+    CharacterError(String),
+
     #[error("Network error: {0}")]
     Network(String),
 
@@ -420,6 +429,9 @@ impl AppError {
         match self {
             AppError::Config(_) => "CONFIG_ERROR",
             AppError::Process(_) => "PROCESS_ERROR",
+            AppError::CliNotFound(_) => "CLI_NOT_FOUND",
+            AppError::EnvironmentError(_) => "ENVIRONMENT_ERROR",
+            AppError::CharacterError(_) => "CHARACTER_ERROR",
             AppError::Network(_) => "NETWORK_ERROR",
             AppError::Io(_) => "IO_ERROR",
             AppError::Serialization(_) => "SERIALIZATION_ERROR",
