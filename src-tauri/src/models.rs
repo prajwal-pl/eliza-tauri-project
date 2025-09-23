@@ -9,19 +9,18 @@ use std::collections::HashMap;
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SandboxConfig {
     pub base_url: String,
     pub api_key: String,
-    pub project_id: String,
     pub default_model: Option<String>,
 }
 
 impl SandboxConfig {
-    pub fn new(base_url: String, api_key: String, project_id: String) -> Self {
+    pub fn new(base_url: String, api_key: String) -> Self {
         Self {
             base_url,
             api_key,
-            project_id,
             default_model: None,
         }
     }
@@ -34,7 +33,6 @@ impl SandboxConfig {
     pub fn is_valid(&self) -> bool {
         !self.base_url.is_empty()
             && !self.api_key.is_empty()
-            && !self.project_id.is_empty()
             && self.base_url.starts_with("http")
             && self.api_key.starts_with("eliza_")
             && self.api_key.len() == 70 // "eliza_" + 64 hex chars
@@ -66,6 +64,7 @@ impl std::fmt::Display for RunMode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RunSpec {
     pub id: String,
     pub mode: RunMode,
@@ -108,6 +107,7 @@ pub enum RunStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RunResult {
     pub id: String,
     pub spec: RunSpec,
@@ -200,6 +200,7 @@ pub enum PreflightStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PreflightResult {
     pub node: ToolCheck,
     pub npm: ToolCheck,
@@ -275,6 +276,7 @@ impl PreflightResult {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TelemetryEvent {
     pub device_id: String,
     pub command: String,
@@ -369,6 +371,7 @@ impl<T> ApiResponse<T> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConnectionTestResult {
     pub success: bool,
     pub latency_ms: Option<u64>,
@@ -455,6 +458,7 @@ impl AppError {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LogEvent {
     pub run_id: String,
     pub message: String,

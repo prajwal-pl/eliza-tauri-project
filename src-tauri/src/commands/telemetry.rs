@@ -110,7 +110,6 @@ async fn send_telemetry_request(
     let response = client
         .post(url)
         .header("Authorization", format!("Bearer {}", config.api_key))
-        .header("X-Project-ID", &config.project_id)
         .header("Content-Type", "application/json")
         .json(&payload)
         .send()

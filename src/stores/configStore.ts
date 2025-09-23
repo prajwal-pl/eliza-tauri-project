@@ -230,7 +230,7 @@ export const useConfigStore = create<ConfigState>()(
 // Selectors for common state combinations
 export const useIsReady = () => {
   const { isConfigured, preflightResult } = useConfigStore();
-  return isConfigured && preflightResult?.overall_status === 'ready';
+  return isConfigured && preflightResult?.overallStatus === 'ready';
 };
 
 export const useHasConfiguration = () => {
@@ -244,8 +244,8 @@ export const useConfigurationStatus = () => {
   if (isLoading) return 'loading';
   if (!isConfigured) return 'not_configured';
   if (!preflightResult) return 'checking_requirements';
-  if (preflightResult.overall_status === 'critical_issues') return 'critical_issues';
-  if (preflightResult.overall_status === 'needs_setup') return 'needs_setup';
+  if (preflightResult.overallStatus === 'critical_issues') return 'critical_issues';
+  if (preflightResult.overallStatus === 'needs_setup') return 'needs_setup';
   if (!connectionTest) return 'needs_connection_test';
   if (!connectionTest.success) return 'connection_failed';
 

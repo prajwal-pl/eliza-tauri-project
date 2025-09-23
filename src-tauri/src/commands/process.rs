@@ -691,17 +691,13 @@ fn build_eliza_args(spec: &RunSpec, _config: &SandboxConfig, use_npx: bool) -> R
 fn build_eliza_env(config: &SandboxConfig) -> HashMap<String, String> {
     let mut env = HashMap::new();
 
-    // Standard environment variables that ElizaOS CLI expects
-    // Using sandbox as a placeholder since we're using Sandbox API
-    env.insert("OPENAI_API_KEY".to_string(), "sandbox".to_string());
-
-    // Sandbox-specific environment variables for ElizaOS CLI
-    env.insert("SANDBOX_BASE_URL".to_string(), config.base_url.clone());
-    env.insert("SANDBOX_API_KEY".to_string(), config.api_key.clone());
-    env.insert("SANDBOX_PROJECT_ID".to_string(), config.project_id.clone());
+    // ElizaOS Cloud API environment variables (matching real ElizaOS structure)
+    env.insert("ELIZAOS_BASE_URL".to_string(), config.base_url.clone());
+    env.insert("ELIZAOS_API_KEY".to_string(), config.api_key.clone());
 
     if let Some(ref model) = config.default_model {
-        env.insert("DEFAULT_MODEL".to_string(), model.clone());
+        env.insert("ELIZAOS_LARGE_MODEL".to_string(), model.clone());
+        env.insert("ELIZAOS_SMALL_MODEL".to_string(), model.clone());
     }
 
     // ElizaOS-specific environment variables
@@ -796,7 +792,6 @@ mod tests {
         let config = SandboxConfig {
             base_url: "https://api.example.com".to_string(),
             api_key: "eliza_test_key".to_string(),
-            project_id: "test-project".to_string(),
             default_model: Some("gpt-4".to_string()),
         };
 
@@ -812,15 +807,13 @@ mod tests {
         let config = SandboxConfig {
             base_url: "https://api.example.com".to_string(),
             api_key: "eliza_test_key".to_string(),
-            project_id: "test-project".to_string(),
             default_model: Some("gpt-4".to_string()),
         };
 
         let env = build_eliza_env(&config);
-        assert_eq!(env.get("SANDBOX_BASE_URL"), Some(&"https://api.example.com".to_string()));
-        assert_eq!(env.get("SANDBOX_API_KEY"), Some(&"eliza_test_key".to_string()));
-        assert_eq!(env.get("SANDBOX_PROJECT_ID"), Some(&"test-project".to_string()));
-        assert_eq!(env.get("DEFAULT_MODEL"), Some(&"gpt-4".to_string()));
-        assert_eq!(env.get("OPENAI_API_KEY"), Some(&"sandbox".to_string()));
+        assert_eq!(env.get("ELIZAOS_BASE_URL"), Some(&"https://api.example.com".to_string()));
+        assert_eq!(env.get("ELIZAOS_API_KEY"), Some(&"eliza_test_key".to_string()));
+        assert_eq!(env.get("ELIZAOS_LARGE_MODEL"), Some(&"gpt-4".to_string()));
+        assert_eq!(env.get("ELIZAOS_SMALL_MODEL"), Some(&"gpt-4".to_string()));
     }
 }

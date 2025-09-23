@@ -13,14 +13,12 @@ import { z } from 'zod';
 export interface SandboxConfig {
   baseUrl: string;
   apiKey: string;
-  projectId: string;
   defaultModel?: string;
 }
 
 const SandboxConfigSchema = z.object({
   baseUrl: z.string().url('Invalid base URL format'),
-  apiKey: z.string().min(1, 'API key is required').regex(/^eliza_[a-f0-9]{64}$/, 'Invalid API key format'),
-  projectId: z.string().min(1, 'Project ID is required'),
+  apiKey: z.string().min(1, 'API key is required').regex(/^eliza_[a-f0-9]{64}$/, 'Invalid API key format').length(70, 'API key must be exactly 70 characters'),
   defaultModel: z.string().optional(),
 });
 
@@ -76,7 +74,7 @@ export interface PreflightResult {
   npm: ToolCheck;
   eliza: ToolCheck;
   recommendations: string[];
-  overall_status: 'ready' | 'needs_setup' | 'critical_issues';
+  overallStatus: 'ready' | 'needs_setup' | 'critical_issues';
 }
 
 // ============================================================================

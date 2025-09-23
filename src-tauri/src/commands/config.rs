@@ -24,7 +24,7 @@ pub async fn save_sandbox_config(
     log::info!("Saving Sandbox configuration");
 
     if !config.is_valid() {
-        log::warn!("Invalid configuration provided");
+        log::warn!("Invalid configuration provided: {}", sanitize_config_for_log(&config));
         return Ok(ApiResponse::error(
             "INVALID_CONFIG".to_string(),
             "Configuration is invalid".to_string(),
@@ -214,7 +214,6 @@ async fn test_connection(config: &SandboxConfig) -> Result<ConnectionTestResult,
         client
             .get(&test_url)
             .header("Authorization", format!("Bearer {}", config.api_key))
-            .header("X-Project-ID", &config.project_id)
             .send()
             .await
     })
@@ -297,10 +296,9 @@ pub fn validate_base_url(base_url: &str) -> bool {
 /// Sanitize configuration for logging (redact API key)
 pub fn sanitize_config_for_log(config: &SandboxConfig) -> String {
     format!(
-        "SandboxConfig {{ base_url: \"{}\", api_key: \"{}***\", project_id: \"{}\", default_model: {:?} }}",
+        "SandboxConfig {{ base_url: \"{}\", api_key: \"{}***\", default_model: {:?} }}",
         config.base_url,
         &config.api_key[..12], // Show first 12 chars (eliza_ + 6 chars)
-        config.project_id,
         config.default_model
     )
 }
@@ -331,14 +329,13 @@ mod tests {
         let config = SandboxConfig {
             base_url: "https://api.example.com".to_string(),
             api_key: "eliza_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-            project_id: "test-project".to_string(),
             default_model: Some("gpt-4".to_string()),
         };
 
         let sanitized = sanitize_config_for_log(&config);
         assert!(sanitized.contains("eliza_123456***"));
         assert!(sanitized.contains("https://api.example.com"));
-        assert!(sanitized.contains("test-project"));
+        assert!(sanitized.contains("gpt-4"));
         assert!(!sanitized.contains("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"));
     }
 }
