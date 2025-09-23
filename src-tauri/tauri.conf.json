@@ -30,6 +30,69 @@
     },
     "os": {
       "all": true
+    },
+    "cli": {
+      "description": "ElizaOS CLI Desktop - Interactive terminal and CLI interface",
+      "longDescription": "A desktop interface for ElizaOS with both GUI and CLI capabilities",
+      "args": [
+        {
+          "name": "verbose",
+          "short": "v",
+          "description": "Enable verbose logging",
+          "multiple": true
+        },
+        {
+          "name": "config",
+          "short": "c",
+          "description": "Path to config file",
+          "takesValue": true
+        },
+        {
+          "name": "headless",
+          "description": "Run in headless mode (no GUI)"
+        }
+      ],
+      "subcommands": {
+        "doctor": {
+          "description": "Run system health checks",
+          "args": [
+            {
+              "name": "verbose",
+              "short": "v",
+              "description": "Verbose health check output"
+            }
+          ]
+        },
+        "prompt": {
+          "description": "Send a prompt to the configured API",
+          "args": [
+            {
+              "name": "message",
+              "index": 1,
+              "takesValue": true,
+              "required": true,
+              "description": "Prompt message to send"
+            },
+            {
+              "name": "model",
+              "short": "m",
+              "takesValue": true,
+              "description": "Model to use for the prompt"
+            }
+          ]
+        },
+        "terminal": {
+          "description": "Launch interactive terminal mode",
+          "args": [
+            {
+              "name": "directory",
+              "short": "d",
+              "takesValue": true,
+              "description": "Starting directory"
+            }
+          ]
+        }
+      }
     }
   },
   "bundle": {

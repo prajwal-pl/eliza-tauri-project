@@ -5,6 +5,7 @@ import { useConfigStore } from './stores/configStore';
 import { initializeLogListeners } from './stores/runnerStore';
 import SettingsPage from './components/Settings/SettingsPage';
 import RunnerPage from './components/Runner/RunnerPage';
+import TerminalPage from './components/Terminal/TerminalPage';
 import './App.css';
 
 function App() {
@@ -76,6 +77,12 @@ function App() {
           >
             Runner
           </button>
+          <button
+            className={`nav-tab ${currentView === 'terminal' ? 'active' : ''}`}
+            onClick={() => useAppStore.getState().setCurrentView('terminal')}
+          >
+            Terminal
+          </button>
         </div>
       </nav>
 
@@ -88,7 +95,9 @@ function App() {
         )}
 
         <div className="page-container">
-          {currentView === 'settings' ? <SettingsPage /> : <RunnerPage />}
+          {currentView === 'settings' && <SettingsPage />}
+          {currentView === 'runner' && <RunnerPage />}
+          {currentView === 'terminal' && <TerminalPage />}
         </div>
       </main>
 

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 // Configuration Models
 // ============================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxConfig {
     pub base_url: String,
@@ -341,7 +341,7 @@ pub struct ApiResponse<T> {
     pub error: Option<ApiError>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ApiError {
     pub code: String,
     pub message: String,
@@ -535,8 +535,8 @@ pub fn generate_device_id() -> String {
 }
 
 pub fn generate_safe_run_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
     use rand::Rng;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)

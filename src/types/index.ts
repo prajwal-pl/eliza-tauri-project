@@ -113,7 +113,7 @@ const TelemetryEventSchema = z.object({
 
 export interface AppState {
   isConfigured: boolean;
-  currentView: 'settings' | 'runner';
+  currentView: 'settings' | 'runner' | 'terminal';
   isLoading: boolean;
   error?: string | null;
 }
@@ -131,6 +131,30 @@ export interface LogEvent {
   message: string;
   logType: 'stdout' | 'stderr' | 'info' | 'error' | 'system';
   timestamp: number;
+}
+
+// ============================================================================
+// Terminal Types
+// ============================================================================
+
+export interface TerminalCommand {
+  id: string;
+  command: string;
+  args: string[];
+  timestamp: Date;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  output: string[];
+  error?: string;
+  exitCode?: number;
+}
+
+export interface TerminalSession {
+  id: string;
+  title: string;
+  startedAt: Date;
+  workingDirectory: string;
+  commands: TerminalCommand[];
+  isActive: boolean;
 }
 
 // ============================================================================

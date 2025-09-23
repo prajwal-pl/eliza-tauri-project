@@ -65,10 +65,7 @@ async fn post_telemetry_event(
         .build()
         .map_err(|e| AppError::Network(format!("Failed to create HTTP client: {}", e)))?;
 
-    let telemetry_url = format!(
-        "{}/telemetry/cli",
-        config.base_url.trim_end_matches('/')
-    );
+    let telemetry_url = format!("{}/telemetry/cli", config.base_url.trim_end_matches('/'));
 
     let mut last_error = None;
 
@@ -92,9 +89,8 @@ async fn post_telemetry_event(
         }
     }
 
-    Err(last_error.unwrap_or_else(|| {
-        AppError::Network("All telemetry attempts failed".to_string())
-    }))
+    Err(last_error
+        .unwrap_or_else(|| AppError::Network("All telemetry attempts failed".to_string())))
 }
 
 /// Send telemetry HTTP request
@@ -138,7 +134,10 @@ async fn send_telemetry_request(
             "Telemetry rate limited - too many requests".to_string(),
         ))
     } else {
-        let error_body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(AppError::Network(format!(
             "Telemetry failed with status {}: {}",
             status, error_body
@@ -165,7 +164,8 @@ fn prepare_telemetry_payload(event: &TelemetryEvent) -> serde_json::Value {
 
     // Add optional fields if present
     if let Some(tokens) = event.approx_tokens {
-        payload["event"]["approx_tokens"] = serde_json::Value::Number(serde_json::Number::from(tokens));
+        payload["event"]["approx_tokens"] =
+            serde_json::Value::Number(serde_json::Number::from(tokens));
     }
 
     if let Some(ref error) = event.error {
@@ -173,7 +173,8 @@ fn prepare_telemetry_payload(event: &TelemetryEvent) -> serde_json::Value {
     }
 
     if let Some(ref metadata) = event.metadata {
-        payload["event"]["metadata"] = serde_json::to_value(metadata).unwrap_or(serde_json::Value::Null);
+        payload["event"]["metadata"] =
+            serde_json::to_value(metadata).unwrap_or(serde_json::Value::Null);
     }
 
     payload
@@ -276,7 +277,8 @@ mod tests {
 
     #[test]
     fn test_sanitize_error_for_telemetry() {
-        let error = "Authentication failed with key eliza_secret123 for user at /home/user/file.txt";
+        let error =
+            "Authentication failed with key eliza_secret123 for user at /home/user/file.txt";
         let sanitized = sanitize_error_for_telemetry(error);
 
         assert!(sanitized.contains("[API_KEY]"));

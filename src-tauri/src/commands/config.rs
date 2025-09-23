@@ -4,13 +4,13 @@
 use crate::models::{
     ApiResponse, AppError, ConnectionMetadata, ConnectionTestResult, SandboxConfig,
 };
-use serde_json::json;
-use tauri::Manager;
 use reqwest::Client;
 use serde_json;
+use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use tauri::Manager;
 use tokio::time::timeout;
 
 const CONFIG_FILE: &str = "sandbox_config.json";
@@ -25,7 +25,10 @@ pub async fn save_sandbox_config(
     log::info!("Saving Sandbox configuration");
 
     if !config.is_valid() {
-        log::warn!("Invalid configuration provided: {}", sanitize_config_for_log(&config));
+        log::warn!(
+            "Invalid configuration provided: {}",
+            sanitize_config_for_log(&config)
+        );
         return Ok(ApiResponse::error(
             "INVALID_CONFIG".to_string(),
             "Configuration is invalid".to_string(),
@@ -78,9 +81,7 @@ pub async fn load_sandbox_config(
 
 /// Clear saved Sandbox configuration
 #[tauri::command]
-pub async fn clear_sandbox_config(
-    app: tauri::AppHandle,
-) -> Result<ApiResponse<()>, String> {
+pub async fn clear_sandbox_config(app: tauri::AppHandle) -> Result<ApiResponse<()>, String> {
     log::info!("Clearing Sandbox configuration");
 
     match clear_config_file(&app).await {
@@ -140,7 +141,9 @@ pub async fn test_sandbox_connection(
 
 /// Get the configuration file path
 fn get_config_path(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
-    let app_data_dir = app.path().app_data_dir()
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
         .map_err(|e| AppError::Config(format!("Failed to get app data directory: {}", e)))?;
 
     // Ensure the directory exists
@@ -151,11 +154,13 @@ fn get_config_path(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
 }
 
 /// Save configuration to JSON file
-async fn save_config_to_file(app: &tauri::AppHandle, config: &SandboxConfig) -> Result<(), AppError> {
+async fn save_config_to_file(
+    app: &tauri::AppHandle,
+    config: &SandboxConfig,
+) -> Result<(), AppError> {
     let config_path = get_config_path(app)?;
 
-    let json_data = serde_json::to_string_pretty(config)
-        .map_err(|e| AppError::Serialization(e))?;
+    let json_data = serde_json::to_string_pretty(config).map_err(|e| AppError::Serialization(e))?;
 
     fs::write(&config_path, json_data)
         .map_err(|e| AppError::Config(format!("Failed to write config file: {}", e)))?;
@@ -175,8 +180,8 @@ async fn load_config_from_file(app: &tauri::AppHandle) -> Result<Option<SandboxC
     let json_data = fs::read_to_string(&config_path)
         .map_err(|e| AppError::Config(format!("Failed to read config file: {}", e)))?;
 
-    let config: SandboxConfig = serde_json::from_str(&json_data)
-        .map_err(|e| AppError::Serialization(e))?;
+    let config: SandboxConfig =
+        serde_json::from_str(&json_data).map_err(|e| AppError::Serialization(e))?;
 
     log::debug!("Configuration loaded from: {:?}", config_path);
     Ok(Some(config))
@@ -243,7 +248,11 @@ async fn test_connection(config: &SandboxConfig) -> Result<ConnectionTestResult,
             };
 
             let error = if !success && status != 401 {
-                Some(format!("HTTP {}: {}", status.as_u16(), status.canonical_reason().unwrap_or("Unknown")))
+                Some(format!(
+                    "HTTP {}: {}",
+                    status.as_u16(),
+                    status.canonical_reason().unwrap_or("Unknown")
+                ))
             } else if status == 401 {
                 Some("Authentication failed - please check your API key".to_string())
             } else {
@@ -375,8 +384,7 @@ async fn test_api_completion(config: &SandboxConfig, prompt: &str) -> Result<Str
         let error_text = response.text().await.unwrap_or_default();
         return Err(AppError::Network(format!(
             "API returned {}: {}",
-            status,
-            error_text
+            status, error_text
         )));
     }
 
@@ -414,9 +422,13 @@ mod tests {
 
     #[test]
     fn test_validate_api_key() {
-        assert!(validate_api_key("eliza_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"));
+        assert!(validate_api_key(
+            "eliza_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+        ));
         assert!(!validate_api_key("eliza_short"));
-        assert!(!validate_api_key("invalid_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"));
+        assert!(!validate_api_key(
+            "invalid_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+        ));
         assert!(!validate_api_key(""));
     }
 
@@ -433,7 +445,8 @@ mod tests {
     fn test_sanitize_config_for_log() {
         let config = SandboxConfig {
             base_url: "https://api.example.com".to_string(),
-            api_key: "eliza_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+            api_key: "eliza_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                .to_string(),
             default_model: Some("gpt-4".to_string()),
         };
 
@@ -441,6 +454,8 @@ mod tests {
         assert!(sanitized.contains("eliza_123456***"));
         assert!(sanitized.contains("https://api.example.com"));
         assert!(sanitized.contains("gpt-4"));
-        assert!(!sanitized.contains("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"));
+        assert!(
+            !sanitized.contains("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+        );
     }
 }

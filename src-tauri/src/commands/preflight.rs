@@ -153,7 +153,9 @@ async fn check_tool_version(
         return Ok(None);
     }
 
-    let path = String::from_utf8_lossy(&which_output.stdout).trim().to_string();
+    let path = String::from_utf8_lossy(&which_output.stdout)
+        .trim()
+        .to_string();
     if path.is_empty() {
         return Ok(None);
     }
@@ -166,7 +168,8 @@ async fn check_tool_version(
 
     if version_output.status.success() {
         let version_text = String::from_utf8_lossy(&version_output.stdout);
-        let version = extract_version(&version_text).unwrap_or_else(|| version_text.trim().to_string());
+        let version =
+            extract_version(&version_text).unwrap_or_else(|| version_text.trim().to_string());
 
         Ok(Some((version, path)))
     } else {
@@ -236,15 +239,18 @@ pub fn get_installation_recommendations() -> Vec<String> {
     let platform_str = platform().to_string().to_lowercase();
 
     if platform_str.contains("windows") {
-        recommendations.push("Install Node.js from https://nodejs.org/ (choose LTS version)".to_string());
+        recommendations
+            .push("Install Node.js from https://nodejs.org/ (choose LTS version)".to_string());
         recommendations.push("npm comes bundled with Node.js".to_string());
         recommendations.push("ElizaOS CLI will be installed automatically when needed".to_string());
     } else if platform_str.contains("darwin") || platform_str.contains("macos") {
         recommendations.push("Install Node.js via Homebrew: brew install node".to_string());
-        recommendations.push("Or download from https://nodejs.org/ (choose LTS version)".to_string());
+        recommendations
+            .push("Or download from https://nodejs.org/ (choose LTS version)".to_string());
         recommendations.push("ElizaOS CLI will be installed automatically when needed".to_string());
     } else if platform_str.contains("linux") {
-        recommendations.push("Install Node.js via package manager or from https://nodejs.org/".to_string());
+        recommendations
+            .push("Install Node.js via package manager or from https://nodejs.org/".to_string());
         recommendations.push("Ubuntu/Debian: sudo apt install nodejs npm".to_string());
         recommendations.push("CentOS/RHEL: sudo yum install nodejs npm".to_string());
         recommendations.push("ElizaOS CLI will be installed automatically when needed".to_string());
@@ -271,9 +277,18 @@ mod tests {
 
     #[test]
     fn test_extract_version_from_word() {
-        assert_eq!(extract_version_from_word("v18.17.0"), Some("18.17.0".to_string()));
-        assert_eq!(extract_version_from_word("9.8.1"), Some("9.8.1".to_string()));
-        assert_eq!(extract_version_from_word("1.2.3.4"), Some("1.2.3.4".to_string()));
+        assert_eq!(
+            extract_version_from_word("v18.17.0"),
+            Some("18.17.0".to_string())
+        );
+        assert_eq!(
+            extract_version_from_word("9.8.1"),
+            Some("9.8.1".to_string())
+        );
+        assert_eq!(
+            extract_version_from_word("1.2.3.4"),
+            Some("1.2.3.4".to_string())
+        );
         assert_eq!(extract_version_from_word("not-a-version"), None);
         assert_eq!(extract_version_from_word("1"), None); // Too few parts
     }

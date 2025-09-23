@@ -1,11 +1,13 @@
 //! Process management for ElizaOS CLI execution
 //! Handles spawning, monitoring, and controlling ElizaOS CLI processes
 
-use crate::models::{ApiResponse, AppError, LogEvent, RunResult, RunSpec, RunStatus, RunMode, SandboxConfig};
+use crate::models::{
+    ApiResponse, AppError, LogEvent, RunMode, RunResult, RunSpec, RunStatus, SandboxConfig,
+};
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::{Mutex, RwLock};
@@ -44,7 +46,11 @@ pub async fn start_eliza_run_streaming(
     spec: RunSpec,
     config: SandboxConfig,
 ) -> Result<ApiResponse<RunResult>, String> {
-    log::info!("Starting ElizaOS CLI run with live streaming: {} {:?}", spec.mode, spec.args);
+    log::info!(
+        "Starting ElizaOS CLI run with live streaming: {} {:?}",
+        spec.mode,
+        spec.args
+    );
 
     if !config.is_valid() {
         return Ok(ApiResponse::error(
@@ -128,7 +134,8 @@ pub async fn stop_eliza_run(
                             Ok(_) => {
                                 log::info!("Successfully sent SIGTERM to PID: {}", pid);
                                 process_handle.run_result.status = RunStatus::Killed;
-                                process_handle.run_result.ended_at = Some(crate::models::current_timestamp());
+                                process_handle.run_result.ended_at =
+                                    Some(crate::models::current_timestamp());
                                 process_handle.mark_completed();
 
                                 let result = process_handle.run_result.clone();
@@ -155,7 +162,8 @@ pub async fn stop_eliza_run(
                                 if output.status.success() {
                                     log::info!("Successfully terminated process PID: {}", pid);
                                     process_handle.run_result.status = RunStatus::Killed;
-                                    process_handle.run_result.ended_at = Some(crate::models::current_timestamp());
+                                    process_handle.run_result.ended_at =
+                                        Some(crate::models::current_timestamp());
                                     process_handle.mark_completed();
 
                                     let result = process_handle.run_result.clone();
@@ -168,12 +176,10 @@ pub async fn stop_eliza_run(
                                     ))
                                 }
                             }
-                            Err(e) => {
-                                Ok(ApiResponse::error(
-                                    "STOP_ERROR".to_string(),
-                                    format!("Failed to stop process: {}", e),
-                                ))
-                            }
+                            Err(e) => Ok(ApiResponse::error(
+                                "STOP_ERROR".to_string(),
+                                format!("Failed to stop process: {}", e),
+                            )),
                         }
                     }
                 } else {
@@ -188,12 +194,10 @@ pub async fn stop_eliza_run(
                 Ok(ApiResponse::success(result))
             }
         }
-        None => {
-            Ok(ApiResponse::error(
-                "NOT_FOUND".to_string(),
-                format!("Process {} not found or already completed", run_id),
-            ))
-        }
+        None => Ok(ApiResponse::error(
+            "NOT_FOUND".to_string(),
+            format!("Process {} not found or already completed", run_id),
+        )),
     }
 }
 
@@ -226,7 +230,8 @@ pub async fn kill_eliza_run(
                             Ok(_) => {
                                 log::info!("Successfully sent SIGKILL to PID: {}", pid);
                                 process_handle.run_result.status = RunStatus::Killed;
-                                process_handle.run_result.ended_at = Some(crate::models::current_timestamp());
+                                process_handle.run_result.ended_at =
+                                    Some(crate::models::current_timestamp());
                                 process_handle.mark_completed();
 
                                 let result = process_handle.run_result.clone();
@@ -251,9 +256,13 @@ pub async fn kill_eliza_run(
                         {
                             Ok(output) => {
                                 if output.status.success() {
-                                    log::info!("Successfully force-terminated process PID: {}", pid);
+                                    log::info!(
+                                        "Successfully force-terminated process PID: {}",
+                                        pid
+                                    );
                                     process_handle.run_result.status = RunStatus::Killed;
-                                    process_handle.run_result.ended_at = Some(crate::models::current_timestamp());
+                                    process_handle.run_result.ended_at =
+                                        Some(crate::models::current_timestamp());
                                     process_handle.mark_completed();
 
                                     let result = process_handle.run_result.clone();
@@ -266,12 +275,10 @@ pub async fn kill_eliza_run(
                                     ))
                                 }
                             }
-                            Err(e) => {
-                                Ok(ApiResponse::error(
-                                    "KILL_ERROR".to_string(),
-                                    format!("Failed to kill process: {}", e),
-                                ))
-                            }
+                            Err(e) => Ok(ApiResponse::error(
+                                "KILL_ERROR".to_string(),
+                                format!("Failed to kill process: {}", e),
+                            )),
                         }
                     }
                 } else {
@@ -286,12 +293,10 @@ pub async fn kill_eliza_run(
                 Ok(ApiResponse::success(result))
             }
         }
-        None => {
-            Ok(ApiResponse::error(
-                "NOT_FOUND".to_string(),
-                format!("Process {} not found or already completed", run_id),
-            ))
-        }
+        None => Ok(ApiResponse::error(
+            "NOT_FOUND".to_string(),
+            format!("Process {} not found or already completed", run_id),
+        )),
     }
 }
 
@@ -316,7 +321,8 @@ async fn execute_eliza_run_simple(
     let args = build_eliza_args(&spec, &config, use_npx)?;
 
     // Sanitize arguments for logging (remove sensitive information)
-    let safe_args: Vec<String> = args.iter()
+    let safe_args: Vec<String> = args
+        .iter()
         .map(|arg| {
             if arg.starts_with("eliza_") {
                 format!("{}***", &arg[..12])
@@ -352,7 +358,11 @@ async fn execute_eliza_run_simple(
     let start_time = std::time::Instant::now();
     run_result.status = RunStatus::Running;
 
-    log::info!("Spawning real ElizaOS CLI process: {} {:?}", eliza_cmd, safe_args);
+    log::info!(
+        "Spawning real ElizaOS CLI process: {} {:?}",
+        eliza_cmd,
+        safe_args
+    );
 
     // Execute and capture output
     match command.spawn() {
@@ -389,7 +399,9 @@ async fn execute_eliza_run_simple(
                 }
                 Err(e) => {
                     run_result.status = RunStatus::Failed;
-                    run_result.stderr.push(format!("Failed to wait for process: {}", e));
+                    run_result
+                        .stderr
+                        .push(format!("Failed to wait for process: {}", e));
                     run_result.ended_at = Some(crate::models::current_timestamp());
                     run_result.duration_ms = Some(start_time.elapsed().as_millis() as u64);
                     log::error!("Failed to wait for ElizaOS CLI process: {}", e);
@@ -398,7 +410,9 @@ async fn execute_eliza_run_simple(
         }
         Err(e) => {
             run_result.status = RunStatus::Failed;
-            run_result.stderr.push(format!("Failed to start process: {}", e));
+            run_result
+                .stderr
+                .push(format!("Failed to start process: {}", e));
             run_result.ended_at = Some(crate::models::current_timestamp());
             run_result.duration_ms = Some(start_time.elapsed().as_millis() as u64);
             log::error!("Failed to spawn ElizaOS CLI process: {}", e);
@@ -423,7 +437,10 @@ async fn execute_eliza_run_streaming(
     // Emit system log about starting
     let _ = app.emit(
         "log-event",
-        LogEvent::system(run_id.clone(), "Starting ElizaOS CLI execution...".to_string())
+        LogEvent::system(
+            run_id.clone(),
+            "Starting ElizaOS CLI execution...".to_string(),
+        ),
     );
 
     // Determine ElizaOS CLI command
@@ -436,7 +453,8 @@ async fn execute_eliza_run_streaming(
     let env = build_eliza_env(&config);
 
     // Sanitize arguments for logging
-    let safe_args: Vec<String> = args.iter()
+    let safe_args: Vec<String> = args
+        .iter()
         .map(|arg| {
             if arg.starts_with("eliza_") {
                 format!("{}***", &arg[..12])
@@ -456,7 +474,10 @@ async fn execute_eliza_run_streaming(
     // Emit command info
     let _ = app.emit(
         "log-event",
-        LogEvent::info(run_id.clone(), format!("Command: {} {}", eliza_cmd, safe_args.join(" ")))
+        LogEvent::info(
+            run_id.clone(),
+            format!("Command: {} {}", eliza_cmd, safe_args.join(" ")),
+        ),
     );
 
     // Use tokio::process::Command for async execution
@@ -487,18 +508,22 @@ async fn execute_eliza_run_streaming(
                 let registry = get_process_registry(&app);
                 let process_handle = ProcessHandle::new(run_result.clone());
                 let process_handle_arc = Arc::new(Mutex::new(process_handle));
-                registry.write().await.insert(run_id.clone(), process_handle_arc);
+                registry
+                    .write()
+                    .await
+                    .insert(run_id.clone(), process_handle_arc);
             }
 
             // Get stdout and stderr handles
-            let stdout = child.stdout.take().ok_or_else(|| {
-                AppError::Process("Failed to get stdout handle".to_string())
-            })?;
+            let stdout = child
+                .stdout
+                .take()
+                .ok_or_else(|| AppError::Process("Failed to get stdout handle".to_string()))?;
 
-            let stderr = child.stderr.take().ok_or_else(|| {
-                AppError::Process("Failed to get stderr handle".to_string())
-            })?;
-
+            let stderr = child
+                .stderr
+                .take()
+                .ok_or_else(|| AppError::Process("Failed to get stderr handle".to_string()))?;
 
             // Spawn tasks for streaming logs
             let app_stdout = app.clone();
@@ -510,10 +535,8 @@ async fn execute_eliza_run_streaming(
 
                 while let Ok(Some(line)) = lines.next_line().await {
                     stdout_lines.push(line.clone());
-                    let _ = app_stdout.emit(
-                        "log-event",
-                        LogEvent::stdout(run_id_stdout.clone(), line)
-                    );
+                    let _ =
+                        app_stdout.emit("log-event", LogEvent::stdout(run_id_stdout.clone(), line));
                 }
                 stdout_lines
             });
@@ -527,10 +550,8 @@ async fn execute_eliza_run_streaming(
 
                 while let Ok(Some(line)) = lines.next_line().await {
                     stderr_lines.push(line.clone());
-                    let _ = app_stderr.emit(
-                        "log-event",
-                        LogEvent::stderr(run_id_stderr.clone(), line)
-                    );
+                    let _ =
+                        app_stderr.emit("log-event", LogEvent::stderr(run_id_stderr.clone(), line));
                 }
                 stderr_lines
             });
@@ -583,20 +604,25 @@ async fn execute_eliza_run_streaming(
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 let mut guard = cleanup_registry.write().await;
                 guard.remove(&cleanup_run_id);
-                log::debug!("Cleaned up completed process from registry: {}", cleanup_run_id);
+                log::debug!(
+                    "Cleaned up completed process from registry: {}",
+                    cleanup_run_id
+                );
             });
 
             // Emit completion event
             let status_msg = match run_result.status {
-                RunStatus::Completed => format!("Process completed successfully (exit code: {:?})", run_result.exit_code),
-                RunStatus::Failed => format!("Process failed (exit code: {:?})", run_result.exit_code),
+                RunStatus::Completed => format!(
+                    "Process completed successfully (exit code: {:?})",
+                    run_result.exit_code
+                ),
+                RunStatus::Failed => {
+                    format!("Process failed (exit code: {:?})", run_result.exit_code)
+                }
                 _ => "Process ended".to_string(),
             };
 
-            let _ = app.emit(
-                "log-event",
-                LogEvent::system(run_id.clone(), status_msg)
-            );
+            let _ = app.emit("log-event", LogEvent::system(run_id.clone(), status_msg));
 
             log::info!(
                 "Streaming ElizaOS CLI process completed: exit_code={:?}, duration={}ms, stdout_lines={}, stderr_lines={}",
@@ -610,13 +636,15 @@ async fn execute_eliza_run_streaming(
         }
         Err(e) => {
             run_result.status = RunStatus::Failed;
-            run_result.stderr.push(format!("Failed to spawn process: {}", e));
+            run_result
+                .stderr
+                .push(format!("Failed to spawn process: {}", e));
             run_result.ended_at = Some(crate::models::current_timestamp());
             run_result.duration_ms = Some(start_time.elapsed().as_millis() as u64);
 
             let _ = app.emit(
                 "log-event",
-                LogEvent::error(run_id.clone(), format!("Failed to spawn process: {}", e))
+                LogEvent::error(run_id.clone(), format!("Failed to spawn process: {}", e)),
             );
 
             log::error!("Failed to spawn streaming ElizaOS CLI process: {}", e);
@@ -638,7 +666,8 @@ async fn resolve_eliza_command() -> Result<(String, bool), AppError> {
     // Try npx approach with correct package
     if let Ok(output) = Command::new("npx")
         .args(["-y", "@elizaos/cli@latest", "--version"])
-        .output() {
+        .output()
+    {
         if output.status.success() {
             log::debug!("ElizaOS CLI available via npx");
             return Ok(("npx".to_string(), true));
@@ -646,12 +675,17 @@ async fn resolve_eliza_command() -> Result<(String, bool), AppError> {
     }
 
     Err(AppError::CliNotFound(
-        "ElizaOS CLI not available. Please install with: npm install -g @elizaos/cli@latest".to_string()
+        "ElizaOS CLI not available. Please install with: npm install -g @elizaos/cli@latest"
+            .to_string(),
     ))
 }
 
 /// Build ElizaOS CLI arguments based on run specification
-fn build_eliza_args(spec: &RunSpec, _config: &SandboxConfig, use_npx: bool) -> Result<Vec<String>, AppError> {
+fn build_eliza_args(
+    spec: &RunSpec,
+    _config: &SandboxConfig,
+    use_npx: bool,
+) -> Result<Vec<String>, AppError> {
     let mut args = Vec::new();
 
     // If using npx, add the package specification
@@ -668,7 +702,7 @@ fn build_eliza_args(spec: &RunSpec, _config: &SandboxConfig, use_npx: bool) -> R
             args.push("--type".to_string());
             args.push("component".to_string());
             args.push("--skip-build".to_string());
-        },
+        }
         RunMode::Run => {
             // Run mode: Start ElizaOS agent server
             args.push("start".to_string());
@@ -677,11 +711,11 @@ fn build_eliza_args(spec: &RunSpec, _config: &SandboxConfig, use_npx: bool) -> R
                 args.push("--character".to_string());
                 args.push(spec.args[0].clone());
             }
-        },
+        }
         RunMode::Eval => {
             // Eval mode: Development mode
             args.push("dev".to_string());
-        },
+        }
         RunMode::Custom => {
             // Custom command from spec.args[0] if available
             if !spec.args.is_empty() {
@@ -700,7 +734,11 @@ fn build_eliza_args(spec: &RunSpec, _config: &SandboxConfig, use_npx: bool) -> R
     }
 
     // Add additional arguments (skip first for Custom mode since it's the command)
-    let skip_count = if matches!(spec.mode, RunMode::Custom) && !spec.args.is_empty() { 1 } else { 0 };
+    let skip_count = if matches!(spec.mode, RunMode::Custom) && !spec.args.is_empty() {
+        1
+    } else {
+        0
+    };
     args.extend(spec.args.iter().skip(skip_count).cloned());
 
     Ok(args)
@@ -755,12 +793,10 @@ pub async fn get_run_result(
             let run_result = process_handle.run_result.clone();
             Ok(ApiResponse::success(run_result))
         }
-        None => {
-            Ok(ApiResponse::error(
-                "NOT_FOUND".to_string(),
-                format!("Run {} not found", run_id),
-            ))
-        }
+        None => Ok(ApiResponse::error(
+            "NOT_FOUND".to_string(),
+            format!("Run {} not found", run_id),
+        )),
     }
 }
 
@@ -830,8 +866,14 @@ mod tests {
         };
 
         let env = build_eliza_env(&config);
-        assert_eq!(env.get("ELIZAOS_BASE_URL"), Some(&"https://api.example.com".to_string()));
-        assert_eq!(env.get("ELIZAOS_API_KEY"), Some(&"eliza_test_key".to_string()));
+        assert_eq!(
+            env.get("ELIZAOS_BASE_URL"),
+            Some(&"https://api.example.com".to_string())
+        );
+        assert_eq!(
+            env.get("ELIZAOS_API_KEY"),
+            Some(&"eliza_test_key".to_string())
+        );
         assert_eq!(env.get("ELIZAOS_LARGE_MODEL"), Some(&"gpt-4".to_string()));
         assert_eq!(env.get("ELIZAOS_SMALL_MODEL"), Some(&"gpt-4".to_string()));
     }

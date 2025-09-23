@@ -8,7 +8,7 @@ import type { AppState } from '../types';
 
 interface AppStoreState extends AppState {
   // Navigation state
-  currentView: 'settings' | 'runner';
+  currentView: 'settings' | 'runner' | 'terminal';
   sidebarCollapsed: boolean;
 
   // Global UI state
@@ -21,7 +21,7 @@ interface AppStoreState extends AppState {
   isFirstLaunch: boolean;
 
   // Actions
-  setCurrentView: (view: 'settings' | 'runner') => void;
+  setCurrentView: (view: 'settings' | 'runner' | 'terminal') => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -61,7 +61,7 @@ export const useAppStore = create<AppStoreState>()(
       isFirstLaunch: true,
 
       // Set current view/page
-      setCurrentView: (view: 'settings' | 'runner') => {
+      setCurrentView: (view: 'settings' | 'runner' | 'terminal') => {
         set({ currentView: view });
       },
 
