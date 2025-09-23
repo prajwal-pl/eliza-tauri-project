@@ -191,7 +191,7 @@ pub async fn stop_eliza_run(
         None => {
             Ok(ApiResponse::error(
                 "NOT_FOUND".to_string(),
-                format!("Run {} not found or already completed", run_id),
+                format!("Process {} not found or already completed", run_id),
             ))
         }
     }
@@ -289,7 +289,7 @@ pub async fn kill_eliza_run(
         None => {
             Ok(ApiResponse::error(
                 "NOT_FOUND".to_string(),
-                format!("Run {} not found or already completed", run_id),
+                format!("Process {} not found or already completed", run_id),
             ))
         }
     }
@@ -301,8 +301,8 @@ async fn execute_eliza_run_simple(
     spec: RunSpec,
     config: SandboxConfig,
 ) -> Result<RunResult, AppError> {
-    // Generate unique run ID
-    let run_id = format!("run_{}", crate::models::current_timestamp());
+    // Generate unique run ID using safe format
+    let run_id = crate::models::generate_safe_run_id();
 
     // Create initial run result
     let mut run_result = RunResult::new(spec.clone(), run_id.clone());
@@ -414,8 +414,8 @@ async fn execute_eliza_run_streaming(
     spec: RunSpec,
     config: SandboxConfig,
 ) -> Result<RunResult, AppError> {
-    // Generate unique run ID
-    let run_id = format!("run_{}", crate::models::current_timestamp());
+    // Generate unique run ID using safe format
+    let run_id = crate::models::generate_safe_run_id();
 
     // Create initial run result
     let mut run_result = RunResult::new(spec.clone(), run_id.clone());
@@ -566,13 +566,25 @@ async fn execute_eliza_run_streaming(
 
             // Update the process handle in the registry with the final result
             let registry = get_process_registry(&app);
-            let mut guard = registry.write().await;
-            if let Some(process_handle_arc) = guard.get_mut(&run_id) {
-                let mut process_handle = process_handle_arc.lock().await;
-                process_handle.update_result(run_result.clone());
-                // Mark process as completed (no longer controllable)
-                process_handle.mark_completed();
+            {
+                let mut guard = registry.write().await;
+                if let Some(process_handle_arc) = guard.get_mut(&run_id) {
+                    let mut process_handle = process_handle_arc.lock().await;
+                    process_handle.update_result(run_result.clone());
+                    // Mark process as completed (no longer controllable)
+                    process_handle.mark_completed();
+                }
             }
+
+            // Clean up completed processes from registry after a short delay
+            let cleanup_registry = registry.clone();
+            let cleanup_run_id = run_id.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                let mut guard = cleanup_registry.write().await;
+                guard.remove(&cleanup_run_id);
+                log::debug!("Cleaned up completed process from registry: {}", cleanup_run_id);
+            });
 
             // Emit completion event
             let status_msg = match run_result.status {
@@ -648,20 +660,26 @@ fn build_eliza_args(spec: &RunSpec, _config: &SandboxConfig, use_npx: bool) -> R
         args.push("@elizaos/cli@latest".to_string());
     }
 
-    // Real ElizaOS CLI commands based on the documentation
+    // Actual ElizaOS CLI commands based on real CLI capabilities
     match spec.mode {
         RunMode::Doctor => {
-            // Use 'start' for doctor mode - ElizaOS CLI diagnostic
-            args.push("start".to_string());
-            args.push("--mode".to_string());
-            args.push("diagnostic".to_string());
+            // Doctor mode: run system tests to check ElizaOS capabilities
+            args.push("test".to_string());
+            args.push("--type".to_string());
+            args.push("component".to_string());
+            args.push("--skip-build".to_string());
         },
         RunMode::Run => {
-            // Standard elizaos start command
+            // Run mode: Start ElizaOS agent server
             args.push("start".to_string());
+            if !spec.args.is_empty() {
+                // Add character file if specified in args
+                args.push("--character".to_string());
+                args.push(spec.args[0].clone());
+            }
         },
         RunMode::Eval => {
-            // Development mode
+            // Eval mode: Development mode
             args.push("dev".to_string());
         },
         RunMode::Custom => {
@@ -669,7 +687,8 @@ fn build_eliza_args(spec: &RunSpec, _config: &SandboxConfig, use_npx: bool) -> R
             if !spec.args.is_empty() {
                 args.push(spec.args[0].clone());
             } else {
-                args.push("start".to_string());
+                // Default to showing help
+                args.push("--help".to_string());
             }
         }
     }

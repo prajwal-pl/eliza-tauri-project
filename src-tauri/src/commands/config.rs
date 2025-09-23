@@ -4,6 +4,7 @@
 use crate::models::{
     ApiResponse, AppError, ConnectionMetadata, ConnectionTestResult, SandboxConfig,
 };
+use serde_json::json;
 use tauri::Manager;
 use reqwest::Client;
 use serde_json;
@@ -202,8 +203,13 @@ async fn test_connection(config: &SandboxConfig) -> Result<ConnectionTestResult,
         .build()
         .map_err(|e| AppError::Network(format!("Failed to create HTTP client: {}", e)))?;
 
-    // Construct test endpoint URL
-    let test_url = format!("{}/health", config.base_url.trim_end_matches('/'));
+    // Construct test endpoint URL - health endpoint is at root, not under /api/v1
+    let base_url = config.base_url.trim_end_matches('/');
+    let test_url = if base_url.ends_with("/api/v1") {
+        format!("{}/health", base_url.trim_end_matches("/api/v1"))
+    } else {
+        format!("{}/health", base_url)
+    };
 
     log::debug!("Testing connection to: {}", test_url);
 
@@ -291,6 +297,105 @@ pub fn validate_api_key(api_key: &str) -> bool {
 /// Validate base URL format
 pub fn validate_base_url(base_url: &str) -> bool {
     base_url.starts_with("http://") || base_url.starts_with("https://")
+}
+
+/// Test API prompt execution
+#[tauri::command]
+pub async fn test_api_prompt(
+    config: SandboxConfig,
+    prompt: String,
+) -> Result<ApiResponse<String>, String> {
+    log::info!("Testing API prompt: {}", prompt);
+
+    if !config.is_valid() {
+        return Ok(ApiResponse::error(
+            "INVALID_CONFIG".to_string(),
+            "Invalid configuration".to_string(),
+        ));
+    }
+
+    match test_api_completion(&config, &prompt).await {
+        Ok(response) => {
+            log::info!("API prompt test successful");
+            Ok(ApiResponse::success(response))
+        }
+        Err(e) => {
+            log::error!("API prompt test failed: {}", e);
+            Ok(ApiResponse::error(
+                "API_TEST_ERROR".to_string(),
+                format!("API test failed: {}", e),
+            ))
+        }
+    }
+}
+
+/// Test API completion request
+async fn test_api_completion(config: &SandboxConfig, prompt: &str) -> Result<String, AppError> {
+    let client = Client::builder()
+        .timeout(Duration::from_secs(30))
+        .user_agent("ElizaOS-Desktop/0.1.0")
+        .build()
+        .map_err(|e| AppError::Network(format!("Failed to create HTTP client: {}", e)))?;
+
+    // Construct API endpoint URL
+    let base_url_trimmed = config.base_url.trim_end_matches('/');
+    let api_url = if base_url_trimmed.ends_with("/api/v1") {
+        format!("{}/chat/completions", base_url_trimmed)
+    } else {
+        format!("{}/api/v1/chat/completions", base_url_trimmed)
+    };
+
+    log::debug!("Original base_url: {}", config.base_url);
+    log::debug!("Trimmed base_url: {}", base_url_trimmed);
+    log::debug!("Constructed API URL: {}", api_url);
+
+    // Prepare request payload
+    let payload = json!({
+        "model": config.default_model.as_deref().unwrap_or("gpt-4o-mini"),
+        "messages": [{
+            "role": "user",
+            "content": prompt
+        }],
+        "max_tokens": 100
+    });
+
+    log::debug!("Testing API at: {}", api_url);
+
+    let response = client
+        .post(&api_url)
+        .header("Authorization", format!("Bearer {}", config.api_key))
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| AppError::Network(format!("API request failed: {}", e)))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(AppError::Network(format!(
+            "API returned {}: {}",
+            status,
+            error_text
+        )));
+    }
+
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| AppError::Network(format!("Failed to parse JSON response: {}", e)))?;
+
+    // Extract the response content
+    let content = response_json
+        .get("choices")
+        .and_then(|choices| choices.get(0))
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(|content| content.as_str())
+        .unwrap_or("No response content")
+        .to_string();
+
+    Ok(content)
 }
 
 /// Sanitize configuration for logging (redact API key)

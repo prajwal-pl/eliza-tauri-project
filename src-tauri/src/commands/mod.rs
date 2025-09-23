@@ -8,7 +8,7 @@ pub mod telemetry;
 
 // Re-export all command functions for easy access
 pub use config::{
-    clear_sandbox_config, load_sandbox_config, save_sandbox_config, test_sandbox_connection,
+    clear_sandbox_config, load_sandbox_config, save_sandbox_config, test_sandbox_connection, test_api_prompt,
 };
 pub use preflight::preflight_check;
 pub use process::{kill_eliza_run, start_eliza_run, start_eliza_run_streaming, stop_eliza_run};

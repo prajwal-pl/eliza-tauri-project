@@ -2,6 +2,19 @@ import React, { useEffect, useRef } from 'react';
 import { useRunnerStore } from '../../stores/runnerStore';
 import { useConfigStore } from '../../stores/configStore';
 
+// Safe date formatting utility
+const formatDate = (date: string | Date): string => {
+  try {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    if (isNaN(dateObj.getTime())) {
+      return 'Invalid Date';
+    }
+    return dateObj.toLocaleTimeString();
+  } catch {
+    return 'Invalid Date';
+  }
+};
+
 const RunnerPage: React.FC = () => {
   const {
     currentRun,
@@ -124,9 +137,9 @@ const RunnerPage: React.FC = () => {
               {currentRun.pid && (
                 <div>PID: {currentRun.pid}</div>
               )}
-              <div>Started: {new Date(currentRun.startedAt).toLocaleTimeString()}</div>
+              <div>Started: {formatDate(currentRun.startedAt)}</div>
               {currentRun.endedAt && (
-                <div>Ended: {new Date(currentRun.endedAt).toLocaleTimeString()}</div>
+                <div>Ended: {formatDate(currentRun.endedAt)}</div>
               )}
               {currentRun.durationMs && (
                 <div>Duration: {currentRun.durationMs}ms</div>

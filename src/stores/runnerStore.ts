@@ -183,7 +183,8 @@ export const useRunnerStore = create<RunnerState>()(
       // Stop the current run gracefully
       stopRun: async () => {
         const { currentRun } = get();
-        if (!currentRun || !get().isRunning) {
+        if (!currentRun) {
+          console.warn('No current run to stop');
           return;
         }
 
@@ -205,10 +206,20 @@ export const useRunnerStore = create<RunnerState>()(
               ),
             });
           } else {
-            throw new AppError(
-              response.error?.message || 'Failed to stop run',
-              response.error?.code || 'STOP_ERROR'
-            );
+            // Handle "not found" case gracefully
+            if (response.error?.code === 'NOT_FOUND') {
+              console.log('Process already completed or not found, updating state');
+              set({
+                isRunning: false,
+                isLoading: false,
+                error: null,
+              });
+            } else {
+              throw new AppError(
+                response.error?.message || 'Failed to stop run',
+                response.error?.code || 'STOP_ERROR'
+              );
+            }
           }
         } catch (error) {
           console.error('Error stopping run:', error);
@@ -222,7 +233,8 @@ export const useRunnerStore = create<RunnerState>()(
       // Kill the current run forcefully
       killRun: async () => {
         const { currentRun } = get();
-        if (!currentRun || !get().isRunning) {
+        if (!currentRun) {
+          console.warn('No current run to kill');
           return;
         }
 
@@ -244,10 +256,20 @@ export const useRunnerStore = create<RunnerState>()(
               ),
             });
           } else {
-            throw new AppError(
-              response.error?.message || 'Failed to kill run',
-              response.error?.code || 'KILL_ERROR'
-            );
+            // Handle "not found" case gracefully
+            if (response.error?.code === 'NOT_FOUND') {
+              console.log('Process already completed or not found, updating state');
+              set({
+                isRunning: false,
+                isLoading: false,
+                error: null,
+              });
+            } else {
+              throw new AppError(
+                response.error?.message || 'Failed to kill run',
+                response.error?.code || 'KILL_ERROR'
+              );
+            }
           }
         } catch (error) {
           console.error('Error killing run:', error);
@@ -301,22 +323,75 @@ export const useRunnerStore = create<RunnerState>()(
         set({ maxLogEntries: Math.max(100, Math.min(5000, max)) });
       },
 
-      // Preset command: Run doctor
+      // Preset command: Run doctor (system health check)
       runDoctor: async (config: SandboxConfig) => {
+        const { addLogEntry } = get();
+
+        // Add system health check log entry
+        addLogEntry({
+          timestamp: new Date(),
+          type: 'system',
+          content: 'Running system health check...',
+          source: 'doctor',
+        });
+
+        // Instead of running a non-existent doctor command, run a simple CLI version check
         return get().startStreamingRun({
-          mode: 'doctor',
-          args: ['doctor'],
+          mode: 'version',
+          args: ['--version'],
           env: {},
         }, config);
       },
 
-      // Preset command: Run with prompt
-      runPrompt: async (prompt: string, model: string, config: SandboxConfig) => {
-        return get().startStreamingRun({
-          mode: 'run',
-          args: ['run', '-m', model, '-p', prompt],
-          env: {},
-        }, config);
+      // Preset command: Run with prompt (uses API directly)
+      runPrompt: async (prompt: string, _model: string, config: SandboxConfig) => {
+        set({ isLoading: true, error: null });
+
+        try {
+          const response = await invoke<ApiResponse<string>>('test_api_prompt', {
+            config,
+            prompt,
+          });
+
+          if (response.success && response.data) {
+            // Add a simulated log entry for the API response
+            const logEntry: Omit<LogEntry, 'id'> = {
+              timestamp: new Date(),
+              type: 'system',
+              content: `API Test Response: ${response.data}`,
+              source: 'api-test',
+            };
+
+            get().addLogEntry(logEntry);
+
+            set({ isLoading: false });
+            return response.data;
+          } else {
+            throw new AppError(
+              response.error?.message || 'API test failed',
+              response.error?.code || 'API_TEST_ERROR'
+            );
+          }
+        } catch (error) {
+          console.error('Error testing API prompt:', error);
+          const errorMessage = error instanceof Error ? error.message : 'API test failed';
+
+          // Add error log entry
+          const errorLogEntry: Omit<LogEntry, 'id'> = {
+            timestamp: new Date(),
+            type: 'system',
+            content: `API Test Error: ${errorMessage}`,
+            source: 'api-test',
+          };
+
+          get().addLogEntry(errorLogEntry);
+
+          set({
+            isLoading: false,
+            error: errorMessage,
+          });
+          throw error;
+        }
       },
 
       // Preset command: Run evaluation

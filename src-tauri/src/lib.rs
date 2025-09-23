@@ -46,6 +46,7 @@ pub fn run() {
             load_sandbox_config,
             clear_sandbox_config,
             test_sandbox_connection,
+            test_api_prompt,
 
             // Preflight commands
             preflight_check,

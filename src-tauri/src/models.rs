@@ -122,11 +122,11 @@ pub struct RunResult {
 }
 
 impl RunResult {
-    pub fn new(spec: RunSpec, started_at: String) -> Self {
+    pub fn new(spec: RunSpec, run_id: String) -> Self {
         Self {
-            id: spec.id.clone(),
+            id: run_id,
             spec,
-            started_at,
+            started_at: current_timestamp(),
             ended_at: None,
             exit_code: None,
             stdout: Vec::new(),
@@ -534,8 +534,26 @@ pub fn generate_device_id() -> String {
     format!("{:x}", result)[..16].to_string()
 }
 
+pub fn generate_safe_run_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use rand::Rng;
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+
+    let random_suffix: u16 = rand::thread_rng().gen();
+
+    format!("run_{}_{}", timestamp, random_suffix)
+}
+
 pub fn current_timestamp() -> String {
     chrono::Utc::now().to_rfc3339()
+}
+
+pub fn current_timestamp_epoch() -> i64 {
+    chrono::Utc::now().timestamp()
 }
 
 // Note: All types are already pub and can be imported directly
